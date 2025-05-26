@@ -1,0 +1,22 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+{
+	"build": {
+		"context": "..",
+		"dockerfile": "../Dockerfile",
+		"args": {
+			"USER_NAME": "dev"
+		}
+	},
+	"name": "dev-kaggle-data-analysis",
+	"workspaceFolder": "/home/dev/data-analysis",
+	"postCreateCommand": "poetry install --no-root",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-toolsai.jupyter",
+				"mhutchie.git-graph"
+			]
+		}
+	}
+}
