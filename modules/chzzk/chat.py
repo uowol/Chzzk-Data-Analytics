@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import os
+import gzip
 
 from websocket import WebSocket
 from logging.handlers import TimedRotatingFileHandler
@@ -51,7 +52,11 @@ class ChzzkChat:
         )
         
         if self.category != self.liveCategory:
-            self.logger.info(f"방송 카테고리가 변경되었습니다. {self.category} -> {self.liveCategory}")
+            self.logger.info({
+                "chat_type": "카테고리변경",
+                "old_category": self.category,
+                "new_category": self.liveCategory,
+            })
             self.category = self.liveCategory
 
         sock = WebSocket()
@@ -192,21 +197,38 @@ class ChzzkChat:
                     now = datetime.datetime.fromtimestamp(chat_data["msgTime"] / 1000)
                     now = datetime.datetime.strftime(now, "%Y-%m-%d %H:%M:%S")
 
-                    msg = re.sub(
-                        r":.*?:",
-                        lambda x: self.get_emoji_url(x.group(0)[1:-1]),
-                        chat_data["msg"],
-                    )
+                    # 이모지는 나중에 처리한다.
+                    # msg = re.sub(
+                    #     r":.*?:",
+                    #     lambda x: self.get_emoji_url(x.group(0)[1:-1]),
+                    #     chat_data["msg"],
+                    # )
+                    msg = chat_data["msg"]
                     if chat_type == "후원":
-                        self.logger.info(
-                            f"[{now}][{chat_type}] {extras['payAmount']} - {nickname} : {msg}"
-                        )
+                        self.logger.info({
+                            "chat_type": chat_type,
+                            "chat_time": now,
+                            "nickname": nickname,
+                            "message": msg,
+                            "payAmount": extras.get("payAmount", 0),
+                        })
                     elif chat_type == "구독":
-                        self.logger.info(
-                            f'[{now}][{chat_type}] {extras["month"]}/{extras["tierName"]}/{extras["tierNo"]} - {nickname} : {msg}'
-                        )
+                        self.logger.info({
+                            "chat_type": chat_type,
+                            "chat_time": now,
+                            "nickname": nickname,
+                            "message": msg,
+                            "month": extras["month"],
+                            "tierName": extras["tierName"],
+                            "tierNo": extras["tierNo"],
+                        })
                     elif chat_type == "채팅":
-                        self.logger.info(f"[{now}][{chat_type}] {nickname} : {msg}")
+                        self.logger.info({
+                            "chat_type": chat_type,
+                            "chat_time": now,
+                            "nickname": nickname,
+                            "message": msg,
+                        })
 
             except:
                 pass
@@ -244,3 +266,10 @@ def get_logger(streamer_name: str) -> logging.Logger:
     logger.addHandler(stream_handler)
 
     return logger
+
+
+def compress_old(file_path):
+    if os.path.exists(file_path) and not file_path.endswith(".gz"):
+        with open(file_path, "rb") as f_in, gzip.open(file_path + ".gz", "wb") as f_out:
+            f_out.writelines(f_in)
+        os.remove(file_path)
