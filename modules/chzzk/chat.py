@@ -5,6 +5,7 @@ import re
 import os
 
 from websocket import WebSocket
+from logging.handlers import TimedRotatingFileHandler
 
 from . import api, enums
 
@@ -16,10 +17,11 @@ class ChzzkChat:
         self.streamer = streamer
         self.cookies = cookies
         self.logger = logger
+        self.category = None
 
         self.sid = None
         self.userIdHash = api.fetch_userIdHash(self.cookies)
-        self.chatChannelId = api.fetch_chatChannelId(self.streamer, self.cookies)
+        self.chatChannelId, self.liveCategory = api.fetch_chatChannelId(self.streamer, self.cookies)
         self.channelName = api.fetch_channelName(self.streamer)
         self.accessToken, self.extraToken = api.fetch_accessToken(
             self.chatChannelId, self.cookies
@@ -27,7 +29,7 @@ class ChzzkChat:
         self.emojiPacks, self.subEmojiPacks = api.fetch_channelEmojiPacks(
             self.streamer, self.cookies
         )
-
+        
         self.connect()
 
     def get_emoji_url(self, emoji_id: str) -> str:
@@ -43,10 +45,14 @@ class ChzzkChat:
 
     def connect(self):
 
-        self.chatChannelId = api.fetch_chatChannelId(self.streamer, self.cookies)
+        self.chatChannelId, self.liveCategory  = api.fetch_chatChannelId(self.streamer, self.cookies)
         self.accessToken, self.extraToken = api.fetch_accessToken(
             self.chatChannelId, self.cookies
         )
+        
+        if self.category != self.liveCategory:
+            self.logger.info(f"방송 카테고리가 변경되었습니다. {self.category} -> {self.liveCategory}")
+            self.category = self.liveCategory
 
         sock = WebSocket()
         sock.connect("wss://kr-ss3.chat.naver.com/chat")
@@ -151,7 +157,7 @@ class ChzzkChat:
 
                     if self.chatChannelId != api.fetch_chatChannelId(
                         self.streamer, self.cookies
-                    ):  # 방송 시작시 chatChannelId가 달라지는 문제
+                    )[0]:  # 방송 시작시 chatChannelId가 달라지는 문제
                         self.connect()
 
                     continue
@@ -206,18 +212,32 @@ class ChzzkChat:
                 pass
 
 
-def get_logger():
+def get_logger(streamer_name: str) -> logging.Logger:
+    
+    class JsonFormatter(logging.Formatter):
+        def format(self, record):
+            return json.dumps(record.msg, ensure_ascii=False)
 
     formatter = logging.Formatter("%(message)s")
 
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    os.makedirs("logs", exist_ok=True)
-
-    file_handler = logging.FileHandler("logs/chat.log", mode="w")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    os.makedirs(f"logs/{streamer_name}", exist_ok=True)
+    json_handler = TimedRotatingFileHandler(
+        f"logs/{streamer_name}/chat",
+        when="M",      # M = minutes, H = hours
+        interval=1,    # 1분마다 회전
+        encoding="utf-8",
+        backupCount=0  # 개수 제한 없음
+    )
+    json_handler.suffix = "%Y%m%d_%H%M.jsonl"
+    json_handler.setFormatter(JsonFormatter())
+    logger.addHandler(json_handler)
+    
+    # file_handler = logging.FileHandler("logs/chat.log", mode="w")
+    # file_handler.setFormatter(formatter)
+    # logger.addHandler(file_handler)
 
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)

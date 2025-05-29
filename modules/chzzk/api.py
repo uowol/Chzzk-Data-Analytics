@@ -5,7 +5,7 @@ import requests
 from .constants import HEADERS
 
 
-def fetch_chatChannelId(streamer: str, cookies: dict) -> str:
+def fetch_chatChannelId(streamer: str, cookies: dict) -> list:
     url = f"https://api.chzzk.naver.com/polling/v2/channels/{streamer}/live-status"
     try:
         response = requests.get(url, cookies=cookies, headers=HEADERS)
@@ -13,8 +13,10 @@ def fetch_chatChannelId(streamer: str, cookies: dict) -> str:
         response = response.json()
 
         chatChannelId = response["content"]["chatChannelId"]
+        liveCategory = response["content"]["liveCategory"]
+        
         assert chatChannelId != None
-        return chatChannelId
+        return [chatChannelId, liveCategory]
     except Exception as e:
         raise e
 

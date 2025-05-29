@@ -9,6 +9,7 @@ class CookiesType(base.BaseModel):
 
 class RequestChzzkChatCrawlMessage(base.RequestMessage):
     streamer_id: str
+    streamer_name: str
     cookies: CookiesType
 
 
