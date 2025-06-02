@@ -1,5 +1,7 @@
-chzzk_chat_crawl:
+chzzk_streaming_check:
   streamer_id: "your_streamer_id_here"
   cookies:
     NID_SES: "your_nid_ses_value"
     NID_AUT: "your_nid_aut_value"
+chzzk_chat_crawl:
+  streamer_name: 'your_streamer_name_here'

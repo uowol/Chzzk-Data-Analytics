@@ -8,10 +8,19 @@ class CookiesType(base.BaseModel):
 
 
 class RequestChzzkChatCrawlMessage(base.RequestMessage):
-    streamer_id: str
-    streamer_name: str
-    cookies: CookiesType
+    streamer_id: Optional[str] = None
+    streamer_name: Optional[str] = None
+    cookies: Optional[CookiesType] = None
 
 
 class ResponseChzzkChatCrawlMessage(RequestChzzkChatCrawlMessage):
     result: str  # "success" or "fail"
+
+
+class RequestChzzkStreamingCheckMessage(base.RequestMessage):
+    streamer_id: Optional[str] = None
+    cookies: Optional[CookiesType] = None
+
+
+class ResponseChzzkStreamingCheckMessage(RequestChzzkStreamingCheckMessage):
+    result: str
