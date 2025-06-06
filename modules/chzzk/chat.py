@@ -13,16 +13,17 @@ from . import api, enums
 
 class ChzzkChat:
 
-    def __init__(self, streamer: str, cookies: dict, logger: logging.Logger):
-
+    def __init__(self, streamer: str, cookies: dict, 
+                 chat_logger: logging.Logger, streaming_logger: logging.Logger):
         self.streamer = streamer
         self.cookies = cookies
-        self.logger = logger
+        self.chat_logger = chat_logger
+        self.streaming_logger = streaming_logger
         self.category = None
 
         self.sid = None
         self.userIdHash = api.fetch_userIdHash(self.cookies)
-        self.chatChannelId, self.liveCategory = api.fetch_chatChannelId(self.streamer, self.cookies)
+        self.chatChannelId, _ = api.fetch_chatChannelId(self.streamer, self.cookies)
         self.channelName = api.fetch_channelName(self.streamer)
         self.accessToken, self.extraToken = api.fetch_accessToken(
             self.chatChannelId, self.cookies
@@ -33,31 +34,14 @@ class ChzzkChat:
         
         self.connect()
 
-    def get_emoji_url(self, emoji_id: str) -> str:
-        if emoji_id.startswith("dp_") or emoji_id.startswith("lck_"):
-            emojipacks = self.emojiPacks
-        else:
-            emojipacks = self.subEmojiPacks
-        for pack in emojipacks:
-            for emoji in pack["emojis"]:
-                if emoji["emojiId"] == emoji_id:
-                    return emoji["imageUrl"]
-        return emoji_id
+    def get_streaming_info(self):
+        return api.fetch_chatChannelId(self.streamer, self.cookies)
 
     def connect(self):
-
-        self.chatChannelId, self.liveCategory  = api.fetch_chatChannelId(self.streamer, self.cookies)
+        self.chatChannelId, _ = self.get_streaming_info()
         self.accessToken, self.extraToken = api.fetch_accessToken(
             self.chatChannelId, self.cookies
         )
-        
-        if self.category != self.liveCategory:
-            self.logger.info({
-                "chat_type": "카테고리변경",
-                "old_category": self.category,
-                "new_category": self.liveCategory,
-            })
-            self.category = self.liveCategory
 
         sock = WebSocket()
         sock.connect("wss://kr-ss3.chat.naver.com/chat")
@@ -103,7 +87,6 @@ class ChzzkChat:
             raise ValueError("오류 발생")
 
     def send(self, message: str):
-
         default_dict = {
             "ver": "3",
             "svcid": "game",
@@ -133,18 +116,29 @@ class ChzzkChat:
 
         self.sock.send(json.dumps(dict(send_dict, **default_dict)))
 
+    def get_emoji_url(self, emoji_id: str) -> str:
+        if emoji_id.startswith("dp_") or emoji_id.startswith("lck_"):
+            emojipacks = self.emojiPacks
+        else:
+            emojipacks = self.subEmojiPacks
+        for pack in emojipacks:
+            for emoji in pack["emojis"]:
+                if emoji["emojiId"] == emoji_id:
+                    return emoji["imageUrl"]
+        return emoji_id
+
     def run(self):
-
         while True:
-
             try:
-
+                is_streaming = api.fetch_streamingCheck(self.streamer, self.cookies)
+                if not is_streaming:
+                    print(f"{self.channelName} 방송이 종료되었습니다.")
+                    break
+                
                 try:
                     raw_message = self.sock.recv()
-
                 except KeyboardInterrupt:
                     break
-
                 except:
                     self.connect()
                     raw_message = self.sock.recv()
@@ -153,48 +147,51 @@ class ChzzkChat:
                 chat_cmd = raw_message["cmd"]
 
                 if chat_cmd == enums.ChzzkChatCommand.RECEIVE_PING:
-
                     self.sock.send(
                         json.dumps(
                             {"ver": "3", "cmd": enums.ChzzkChatCommand.REQUEST_PONG}
                         )
                     )
-
                     if self.chatChannelId != api.fetch_chatChannelId(
                         self.streamer, self.cookies
                     )[0]:  # 방송 시작시 chatChannelId가 달라지는 문제
                         self.connect()
-
                     continue
+                
+                _, self.liveCategory = self.get_streaming_info()
+                if self.category != self.liveCategory:
+                    now = datetime.datetime.now() - datetime.timedelta(hours=3)
+                    now = datetime.datetime.strftime(now, "%Y-%m-%d %H:%M:%S")
+                    self.streaming_logger.info({
+                        "type": enums.ChzzkStreamingType.CHANGE_CATEGORY.value,
+                        "time": now,
+                        "status": self.liveCategory,
+                    })
+                    self.category = self.liveCategory
 
                 if chat_cmd == enums.ChzzkChatCommand.RECEIVE_CHAT:
-                    chat_type = "채팅"
-
+                    chat_type = enums.ChzzkChatType.CHAT
+                    if chat_data["msgStatusType"] == "CBOTBLIND":
+                        chat_type = enums.ChzzkChatType.DELETED_CHAT
+                        chat_data["msg"] = "클린봇에 의해 삭제된 메시지입니다."
                 elif chat_cmd == enums.ChzzkChatCommand.RECEIVE_SPECIAL:
                     messageTypeCode = raw_message["bdy"][0]["msgTypeCode"]
                     extras = json.loads(raw_message["bdy"][0]["extras"])
-                    chat_type = "후원" if messageTypeCode == 10 else "구독"
-
+                    chat_type = enums.ChzzkChatType.DONATION if messageTypeCode == 10 else enums.ChzzkChatType.SUBSCRIPTION
                 else:
                     continue
 
                 for chat_data in raw_message["bdy"]:
-
                     try:
                         if chat_data["uid"] == "anonymous":
                             nickname = "익명의 후원자"
-
                         else:
                             profile_data = json.loads(chat_data["profile"])
                             nickname = profile_data["nickname"]
-
-                        if chat_data["msgStatusType"] == "CBOTBLIND":
-                            chat_data["msg"] = "클린봇에 의해 삭제된 메시지입니다."
-
                     except:
                         continue
 
-                    now = datetime.datetime.fromtimestamp(chat_data["msgTime"] / 1000)
+                    now = datetime.datetime.fromtimestamp(chat_data["msgTime"] / 1000) - datetime.timedelta(hours=3)
                     now = datetime.datetime.strftime(now, "%Y-%m-%d %H:%M:%S")
 
                     # 이모지는 나중에 처리한다.
@@ -204,17 +201,17 @@ class ChzzkChat:
                     #     chat_data["msg"],
                     # )
                     msg = chat_data["msg"]
-                    if chat_type == "후원":
-                        self.logger.info({
-                            "chat_type": chat_type,
+                    if chat_type == enums.ChzzkChatType.DONATION:
+                        self.chat_logger.info({
+                            "chat_type": chat_type.value,
                             "chat_time": now,
                             "nickname": nickname,
                             "message": msg,
                             "payAmount": extras.get("payAmount", 0),
                         })
-                    elif chat_type == "구독":
-                        self.logger.info({
-                            "chat_type": chat_type,
+                    elif chat_type == enums.ChzzkChatType.SUBSCRIPTION:
+                        self.chat_logger.info({
+                            "chat_type": chat_type.value,
                             "chat_time": now,
                             "nickname": nickname,
                             "message": msg,
@@ -222,32 +219,35 @@ class ChzzkChat:
                             "tierName": extras["tierName"],
                             "tierNo": extras["tierNo"],
                         })
-                    elif chat_type == "채팅":
-                        self.logger.info({
-                            "chat_type": chat_type,
+                    elif chat_type == enums.ChzzkChatType.CHAT:
+                        self.chat_logger.info({
+                            "chat_type": chat_type.value,
                             "chat_time": now,
                             "nickname": nickname,
                             "message": msg,
                         })
-
+                    elif chat_type == enums.ChzzkChatType.DELETED_CHAT:
+                        self.chat_logger.info({
+                            "chat_type": chat_type.value,
+                            "chat_time": now,
+                        })
             except:
                 pass
 
 
-def get_logger(streamer_name: str) -> logging.Logger:
-    
+def get_logger(streamer_name: str, log_type: str) -> logging.Logger:
     class JsonFormatter(logging.Formatter):
         def format(self, record):
             return json.dumps(record.msg, ensure_ascii=False)
 
     formatter = logging.Formatter("%(message)s")
 
-    logger = logging.getLogger()
+    logger = logging.getLogger(name=f"{streamer_name}_{log_type}")
     logger.setLevel(logging.INFO)
 
-    os.makedirs(f"logs/{streamer_name}", exist_ok=True)
+    os.makedirs(f"logs/{streamer_name}/{log_type}", exist_ok=True)
     json_handler = TimedRotatingFileHandler(
-        f"logs/{streamer_name}/chat",
+        f"logs/{streamer_name}/{log_type}/{log_type}.log",
         when="M",      # M = minutes, H = hours
         interval=1,    # 1분마다 회전
         encoding="utf-8",

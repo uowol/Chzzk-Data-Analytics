@@ -9,3 +9,12 @@ class ChzzkChatCommand(IntEnum):
     REQUEST_RECENT_CHAT: int = 5101
     RECEIVE_CHAT: int = 93101
     RECEIVE_SPECIAL: int = 93102
+
+class ChzzkChatType(IntEnum):
+    CHAT: int = 100
+    DELETED_CHAT: int = 101
+    DONATION: int = 102
+    SUBSCRIPTION: int = 103
+
+class ChzzkStreamingType(IntEnum):
+    CHANGE_CATEGORY: int = 200

@@ -19,7 +19,9 @@ class Component:
         self.config = ComponentType(**config)
 
     def __call__(self, **kwargs):
-        chzzkchat = ChzzkChat(self.config.streamer_id, self.config.cookies.model_dump(), get_logger(self.config.streamer_name))
+        chzzkchat = ChzzkChat(self.config.streamer_id, self.config.cookies.model_dump(), 
+                              get_logger(self.config.streamer_name, 'chat'),
+                              get_logger(self.config.streamer_name, 'streaming'))
         chzzkchat.run()
 
         return {
