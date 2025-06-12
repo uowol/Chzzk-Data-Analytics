@@ -160,7 +160,7 @@ class ChzzkChat:
                 
                 _, self.liveCategory = self.get_streaming_info()
                 if self.category != self.liveCategory:
-                    now = datetime.datetime.now() - datetime.timedelta(hours=3)
+                    now = datetime.datetime.now()
                     now = datetime.datetime.strftime(now, "%Y-%m-%d %H:%M:%S")
                     self.streaming_logger.info({
                         "type": enums.ChzzkStreamingType.CHANGE_CATEGORY.value,
@@ -191,7 +191,7 @@ class ChzzkChat:
                     except:
                         continue
 
-                    now = datetime.datetime.fromtimestamp(chat_data["msgTime"] / 1000) - datetime.timedelta(hours=3)
+                    now = datetime.datetime.fromtimestamp(chat_data["msgTime"] / 1000)
                     now = datetime.datetime.strftime(now, "%Y-%m-%d %H:%M:%S")
 
                     # 이모지는 나중에 처리한다.
@@ -240,26 +240,35 @@ def get_logger(streamer_name: str, log_type: str) -> logging.Logger:
         def format(self, record):
             return json.dumps(record.msg, ensure_ascii=False)
 
+    def strip_extra_dot(default_name: str) -> str:
+        """e.g. chat.jsonl.20250611_1444 => chat_20250611_1444.jsonl"""
+        path, tail = os.path.split(default_name)
+        base, ext1, ts = tail.split(".")
+        new_tail = f"{base}_{ts}.{ext1}"
+        return os.path.join(path, new_tail)
+
     formatter = logging.Formatter("%(message)s")
 
     logger = logging.getLogger(name=f"{streamer_name}_{log_type}")
     logger.setLevel(logging.INFO)
 
     os.makedirs(f"logs/{streamer_name}/{log_type}", exist_ok=True)
-    json_handler = TimedRotatingFileHandler(
-        f"logs/{streamer_name}/{log_type}/{log_type}.log",
-        when="M",      # M = minutes, H = hours
-        interval=1,    # 1분마다 회전
-        encoding="utf-8",
-        backupCount=0  # 개수 제한 없음
-    )
-    json_handler.suffix = "%Y%m%d_%H%M.jsonl"
-    json_handler.setFormatter(JsonFormatter())
-    logger.addHandler(json_handler)
-    
-    # file_handler = logging.FileHandler("logs/chat.log", mode="w")
-    # file_handler.setFormatter(formatter)
-    # logger.addHandler(file_handler)
+    if log_type == "chat":
+        json_handler = TimedRotatingFileHandler(
+            f"logs/{streamer_name}/{log_type}/{log_type}.jsonl",
+            when="M",      # M = minutes, H = hours
+            interval=1,    # 1분마다 회전
+            encoding="utf-8",
+            backupCount=0  # 개수 제한 없음
+        )
+        json_handler.suffix = "%Y%m%d_%H%M"
+        json_handler.namer = strip_extra_dot
+        json_handler.setFormatter(JsonFormatter())
+        logger.addHandler(json_handler)
+    elif log_type == "streaming":
+        file_handler = logging.FileHandler(f"logs/{streamer_name}/{log_type}/{log_type}.jsonl", mode="w")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)

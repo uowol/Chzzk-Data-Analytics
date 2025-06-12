@@ -7,8 +7,8 @@
 			"USER_NAME": "dev"
 		}
 	},
-	"name": "dev-kaggle-data-analysis",
-	"workspaceFolder": "/home/dev/data-analysis",
+	"name": "chzzk-data-analytics",
+	"workspaceFolder": "/home/chzzk-data-analytics",
 	"postCreateCommand": "poetry install --no-root",
 	"customizations": {
 		"vscode": {
@@ -18,5 +18,6 @@
 				"mhutchie.git-graph"
 			]
 		}
-	}
+	},
+	"mounts": ["source=.,target=/home/chzzk-data-analytics,type=bind"]
 }
