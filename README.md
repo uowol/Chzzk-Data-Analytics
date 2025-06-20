@@ -7,7 +7,25 @@
 - https://github.com/Buddha7771/ChzzkChat?tab=readme-ov-file
 - https://github.com/kimcore/chzzk/tree/main
 
-### Inference
+## Inference
+
+### 1. Run Postgres Server
+```sh
+docker run -d --name postgres-server -p 5432:5432 -e POSTGRES_USER=user -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=chzzk postgres:14.0
+
+apt install psql
+POSTGRES_PASSWORD=pw psql -h localhost -p 5432 -U user -d chzzk
+```
+
+dev-container 환경을 사용할 경우 타 docker container로 띄워진 postgres server에 접근하려면, 같은 네트워크로 연결하고 `localhost` 대신 server 컨테이너의 `container-name`을 입력하면됩니다.
+
+```sh
+docker network create chzzk
+docker network connect chzzk priceless_ellis(dev-container)
+docker network connect chzzk postgres-server
+POSTGRES_PASSWORD=pw psql -h postgres-server -p 5432 -U user -d chzzk
+```
+
 
 ```sh
 poetry run python run_pipeline.py --pipeline crawl_chat.yaml

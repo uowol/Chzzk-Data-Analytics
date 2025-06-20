@@ -1,0 +1,20 @@
+version: "3"
+
+services:
+  postgres-server:
+    image: postgres:14.0
+    container_name: postgres-server
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chzzk
+    ports:
+      - "5432:5432"
+  chzzk-analytics:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chzzk-analytics
+    depends_on:
+      - postgres-server
+    command: []
