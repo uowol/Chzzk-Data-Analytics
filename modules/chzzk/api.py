@@ -69,7 +69,7 @@ def fetch_userIdHash(cookies: dict) -> str:
         raise e
 
 
-def fetch_channelEmojiPacks(streamer: str, cookies: dict) -> str:
+def fetch_channelEmojiPacks(streamer: str, cookies: dict) -> tuple:
     url = f"https://api.chzzk.naver.com/service/v1/channels/{streamer}/emoji-packs"
     try:
         response = requests.get(url, cookies=cookies, headers=HEADERS)

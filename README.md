@@ -9,7 +9,10 @@
 
 ## Inference
 
-### 1. Run Postgres Server
+### 1. Run Docker-compose
+
+TBD: update under contents
+
 ```sh
 docker run -d --name postgres-server -p 5432:5432 -e POSTGRES_USER=user -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=chzzk postgres:14.0
 
@@ -26,6 +29,14 @@ docker network connect chzzk postgres-server
 POSTGRES_PASSWORD=pw psql -h postgres-server -p 5432 -U user -d chzzk
 ```
 
+### 2. Kafka create Topic
+
+```sh
+docker compose -p chzzk exec broker kafka-topics --create --topic topic-test --bootstrap-server broker:29092 --partitions 1 --replication-factor 1
+
+
+docker compose -p chzzk exec broker kafka-topics --describe --topic topic-test --bootstrap-server broker:29092   
+```
 
 ```sh
 poetry run python run_pipeline.py --pipeline crawl_chat.yaml

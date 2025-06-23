@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from classes.chzzk import CookiesType
 from modules.chzzk.api import fetch_streamingCheck
 
+
 class ComponentType(BaseModel):
     streamer_id: str
     cookies: CookiesType

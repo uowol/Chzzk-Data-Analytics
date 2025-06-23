@@ -6,16 +6,16 @@ import yaml
 from pydantic import BaseModel
 
 from classes.chzzk import (
-    RequestChzzkChatCrawlMessage,
-    RequestChzzkStreamingCheckMessage
+    RequestProducerMessage,
+    RequestStreamingCheckMessage
 )
-from components.chzzk_chat_crawl import Component as ChzzkChatCrawlComponent
-from components.chzzk_streaming_check import Component as ChzzkStreamingCheckComponent
+from components.producer import Component as ProducerComponent
+from components.streaming_check import Component as StreamingCheckComponent
 
 
 class PipelineType(BaseModel):
-    chzzk_streaming_check: Optional[RequestChzzkStreamingCheckMessage] = None
-    chzzk_chat_crawl: Optional[RequestChzzkChatCrawlMessage] = None
+    streaming_check: Optional[RequestStreamingCheckMessage] = None
+    producer: Optional[RequestProducerMessage] = None
 
 
 class Pipeline:
@@ -27,28 +27,26 @@ class Pipeline:
             Component, request_message: dict
         ):
             print(f"# ===== exec_component: {Component} =====")
-            # print("# [INFO] request_message: ", request_message)
             component = Component(**request_message)
             response_message = component()
-            # print("# [INFO] response_message: ", response_message)
             assert (
                 response_message["result"] == "success"
             ), f"exec_component failed: {response_message}"
             return response_message
 
-        if self.config.chzzk_streaming_check is not None:
-            request_message = self.config.chzzk_streaming_check
+        if self.config.streaming_check is not None:
+            request_message = self.config.streaming_check
             response_message = exec_component(
-                ChzzkStreamingCheckComponent, request_message.model_dump()
+                StreamingCheckComponent, request_message.model_dump()
             )
-            self.config.chzzk_chat_crawl = RequestChzzkChatCrawlMessage(
+            self.config.producer = RequestProducerMessage(
                 streamer_id=request_message.streamer_id,
-                streamer_name=self.config.chzzk_chat_crawl.streamer_name if self.config.chzzk_chat_crawl is not None else request_message.streamer_id,
+                streamer_name=self.config.producer.streamer_name if self.config.producer is not None else request_message.streamer_id,
                 cookies=request_message.cookies
             )
-        if self.config.chzzk_chat_crawl is not None:
-            request_message = self.config.chzzk_chat_crawl
-            response_message = exec_component(ChzzkChatCrawlComponent, request_message.model_dump())
+        if self.config.producer is not None:
+            request_message = self.config.producer
+            response_message = exec_component(ProducerComponent, request_message.model_dump())
 
 
 def init():

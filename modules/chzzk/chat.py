@@ -4,6 +4,8 @@ import logging
 import re
 import os
 import gzip
+import uuid
+from kafka import KafkaProducer
 
 from websocket import WebSocket
 from logging.handlers import TimedRotatingFileHandler
@@ -11,31 +13,55 @@ from logging.handlers import TimedRotatingFileHandler
 from . import api, enums
 
 
-class ChzzkChat:
+def get_logger(streamer_name: str) -> logging.Logger:
+    formatter = logging.Formatter("%(message)s")
 
-    def __init__(self, streamer: str, cookies: dict, 
-                 chat_logger: logging.Logger, streaming_logger: logging.Logger):
-        self.streamer = streamer
+    logger = logging.getLogger(name=f"{streamer_name}")
+    logger.setLevel(logging.INFO)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+    return logger
+
+
+def get_ts() -> float:
+    ts = datetime.datetime.now().timestamp()
+    return ts
+
+
+def get_uid() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+class ChzzkChat:
+    def __init__(self, streamer_id: str, streamer_name: str,
+                 cookies: dict, 
+                 producer: KafkaProducer):
+        self.producer = producer
+        self.logger = get_logger(streamer_name)
+        
+        self.streamer_id = streamer_id
+        self.streamer_name = streamer_name
         self.cookies = cookies
-        self.chat_logger = chat_logger
-        self.streaming_logger = streaming_logger
         self.category = None
 
         self.sid = None
         self.userIdHash = api.fetch_userIdHash(self.cookies)
-        self.chatChannelId, _ = api.fetch_chatChannelId(self.streamer, self.cookies)
-        self.channelName = api.fetch_channelName(self.streamer)
+        self.chatChannelId, _ = api.fetch_chatChannelId(self.streamer_id, self.cookies)
+        self.channelName = api.fetch_channelName(self.streamer_id)
         self.accessToken, self.extraToken = api.fetch_accessToken(
             self.chatChannelId, self.cookies
         )
         self.emojiPacks, self.subEmojiPacks = api.fetch_channelEmojiPacks(
-            self.streamer, self.cookies
+            self.streamer_id, self.cookies
         )
         
         self.connect()
 
     def get_streaming_info(self):
-        return api.fetch_chatChannelId(self.streamer, self.cookies)
+        return api.fetch_chatChannelId(self.streamer_id, self.cookies)
 
     def connect(self):
         self.chatChannelId, _ = self.get_streaming_info()
@@ -45,7 +71,7 @@ class ChzzkChat:
 
         sock = WebSocket()
         sock.connect("wss://kr-ss3.chat.naver.com/chat")
-        print(f"{self.channelName} 채팅창에 연결 중 .", end="")
+        self.logger.info(f"{self.channelName} 채팅창에 연결 중 .")
 
         default_dict = {
             "ver": "3",  # 2025-03
@@ -67,7 +93,7 @@ class ChzzkChat:
         sock.send(json.dumps(dict(send_dict, **default_dict)))
         sock_response = json.loads(sock.recv())
         self.sid = sock_response["bdy"]["sid"]
-        print(f"\r{self.channelName} 채팅창에 연결 중 ..", end="")
+        self.logger.info(f"\r{self.channelName} 채팅창에 연결 중 ..")
 
         send_dict = {
             "cmd": enums.ChzzkChatCommand.REQUEST_RECENT_CHAT,
@@ -78,11 +104,11 @@ class ChzzkChat:
 
         sock.send(json.dumps(dict(send_dict, **default_dict)))
         sock.recv()
-        print(f"\r{self.channelName} 채팅창에 연결 중 ...")
+        self.logger.info(f"\r{self.channelName} 채팅창에 연결 중 ...")
 
         self.sock = sock
         if self.sock.connected:
-            print("연결 완료")
+            self.logger.info("연결 성공")
         else:
             raise ValueError("오류 발생")
 
@@ -130,11 +156,29 @@ class ChzzkChat:
     def run(self):
         while True:
             try:
-                is_streaming = api.fetch_streamingCheck(self.streamer, self.cookies)
+                is_streaming = api.fetch_streamingCheck(self.streamer_id, self.cookies)
                 if not is_streaming:
-                    print(f"{self.channelName} 방송이 종료되었습니다.")
+                    ts = get_ts()
+                    now = datetime.datetime.fromtimestamp(ts)
+                    now = datetime.datetime.strftime(now, "%Y%m%d%H%M%S")
+                    uid = get_uid()
+                    self.logger.info(f"{self.channelName} 방송이 종료되었습니다.")
+                    self.producer.send("streaming", {
+                        "msg_id": f"{self.streamer_name}_{now}_{uid}",
+                        "ts": ts,
+                        "streamer_name": self.streamer_name,
+                        "msg_type": "STREAMING_END",
+                        "payload": {},
+                    })
+                    self.producer.send("chat", {
+                        "msg_id": f"{self.streamer_name}_{now}_{uid}",
+                        "ts": ts,
+                        "streamer_name": self.streamer_name,
+                        "msg_type": "STREAMING_END",
+                        "payload": {},
+                    }
+                    )
                     break
-                
                 try:
                     raw_message = self.sock.recv()
                 except KeyboardInterrupt:
@@ -153,19 +197,25 @@ class ChzzkChat:
                         )
                     )
                     if self.chatChannelId != api.fetch_chatChannelId(
-                        self.streamer, self.cookies
+                        self.streamer_id, self.cookies
                     )[0]:  # 방송 시작시 chatChannelId가 달라지는 문제
                         self.connect()
                     continue
                 
                 _, self.liveCategory = self.get_streaming_info()
                 if self.category != self.liveCategory:
-                    now = datetime.datetime.now()
-                    now = datetime.datetime.strftime(now, "%Y-%m-%d %H:%M:%S")
-                    self.streaming_logger.info({
-                        "type": enums.ChzzkStreamingType.CHANGE_CATEGORY.value,
-                        "time": now,
-                        "status": self.liveCategory,
+                    ts = get_ts()
+                    now = datetime.datetime.fromtimestamp(ts)
+                    now = datetime.datetime.strftime(now, "%Y%m%d%H%M%S")
+                    uid = get_uid()
+                    self.producer.send("streaming", {
+                        "msg_id": f"{self.streamer_name}_{now}_{uid}",
+                        "ts": ts,
+                        "streamer_name": self.streamer_name,
+                        "msg_type": "CATEGORY_CHANGE",
+                        "payload": {
+                            "category": self.liveCategory,
+                        },
                     })
                     self.category = self.liveCategory
 
@@ -191,9 +241,12 @@ class ChzzkChat:
                     except:
                         continue
 
-                    now = datetime.datetime.fromtimestamp(chat_data["msgTime"] / 1000)
-                    now = datetime.datetime.strftime(now, "%Y-%m-%d %H:%M:%S")
-
+                    
+                    
+                    ts = chat_data["msgTime"] / 1000
+                    now = datetime.datetime.fromtimestamp(ts)
+                    now = datetime.datetime.strftime(now, "%Y%m%d%H%M%S")
+                    uid = get_uid()
                     # 이모지는 나중에 처리한다.
                     # msg = re.sub(
                     #     r":.*?:",
@@ -202,83 +255,49 @@ class ChzzkChat:
                     # )
                     msg = chat_data["msg"]
                     if chat_type == enums.ChzzkChatType.DONATION:
-                        self.chat_logger.info({
-                            "chat_type": chat_type.value,
-                            "chat_time": now,
-                            "nickname": nickname,
-                            "message": msg,
-                            "payAmount": extras.get("payAmount", 0),
+                        self.producer.send("chat", {
+                            "msg_id": f"{self.streamer_name}_{now}_{uid}",
+                            "ts": ts,
+                            "streamer_name": self.streamer_name,
+                            "msg_type": "DONATION",
+                            "payload": {
+                                "nickname": nickname,
+                                "message": msg,
+                                "payAmount": extras.get("payAmount", 0),
+                            },
                         })
                     elif chat_type == enums.ChzzkChatType.SUBSCRIPTION:
-                        self.chat_logger.info({
-                            "chat_type": chat_type.value,
-                            "chat_time": now,
-                            "nickname": nickname,
-                            "message": msg,
-                            "month": extras["month"],
-                            "tierName": extras["tierName"],
-                            "tierNo": extras["tierNo"],
+                        self.producer.send("chat", {
+                            "msg_id": f"{self.streamer_name}_{now}_{uid}",
+                            "ts": ts,
+                            "streamer_name": self.streamer_name,
+                            "msg_type": "SUBSCRIPTION",
+                            "payload": {
+                                "nickname": nickname,
+                                "message": msg,
+                                "month": extras["month"],
+                                "tierName": extras["tierName"],
+                                "tierNo": extras["tierNo"],
+                            },
                         })
                     elif chat_type == enums.ChzzkChatType.CHAT:
-                        self.chat_logger.info({
-                            "chat_type": chat_type.value,
-                            "chat_time": now,
-                            "nickname": nickname,
-                            "message": msg,
+                        self.producer.send("chat", {
+                            "msg_id": f"{self.streamer_name}_{now}_{uid}",
+                            "ts": ts,
+                            "streamer_name": self.streamer_name,
+                            "msg_type": "CHAT",
+                            "payload": {
+                                "nickname": nickname,
+                                "message": msg,
+                            },
                         })
                     elif chat_type == enums.ChzzkChatType.DELETED_CHAT:
-                        self.chat_logger.info({
-                            "chat_type": chat_type.value,
-                            "chat_time": now,
+                        self.producer.send("chat", {
+                            "msg_id": f"{self.streamer_name}_{now}_{uid}",
+                            "ts": ts,
+                            "streamer_name": self.streamer_name,
+                            "msg_type": "DELETED_CHAT",
+                            "payload": {},
                         })
             except:
                 pass
-
-
-def get_logger(streamer_name: str, log_type: str) -> logging.Logger:
-    class JsonFormatter(logging.Formatter):
-        def format(self, record):
-            return json.dumps(record.msg, ensure_ascii=False)
-
-    def strip_extra_dot(default_name: str) -> str:
-        """e.g. chat.jsonl.20250611_1444 => chat_20250611_1444.jsonl"""
-        path, tail = os.path.split(default_name)
-        base, ext1, ts = tail.split(".")
-        new_tail = f"{base}_{ts}.{ext1}"
-        return os.path.join(path, new_tail)
-
-    formatter = logging.Formatter("%(message)s")
-
-    logger = logging.getLogger(name=f"{streamer_name}_{log_type}")
-    logger.setLevel(logging.INFO)
-
-    os.makedirs(f"logs/{streamer_name}/{log_type}", exist_ok=True)
-    if log_type == "chat":
-        json_handler = TimedRotatingFileHandler(
-            f"logs/{streamer_name}/{log_type}/{log_type}.jsonl",
-            when="M",      # M = minutes, H = hours
-            interval=1,    # 1분마다 회전
-            encoding="utf-8",
-            backupCount=0  # 개수 제한 없음
-        )
-        json_handler.suffix = "%Y%m%d_%H%M"
-        json_handler.namer = strip_extra_dot
-        json_handler.setFormatter(JsonFormatter())
-        logger.addHandler(json_handler)
-    elif log_type == "streaming":
-        file_handler = logging.FileHandler(f"logs/{streamer_name}/{log_type}/{log_type}.jsonl", mode="w")
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-
-    return logger
-
-
-def compress_old(file_path):
-    if os.path.exists(file_path) and not file_path.endswith(".gz"):
-        with open(file_path, "rb") as f_in, gzip.open(file_path + ".gz", "wb") as f_out:
-            f_out.writelines(f_in)
-        os.remove(file_path)

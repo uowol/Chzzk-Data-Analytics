@@ -5,7 +5,8 @@ sys.path.append("/home/dev/data-analysis")
 from pydantic import BaseModel
 
 from classes.chzzk import CookiesType
-from modules.chzzk.chat import ChzzkChat, get_logger
+from modules.chzzk.chat import ChzzkChat
+from modules.kafka.producer import get_producer, close_producer
 
 
 class ComponentType(BaseModel):
@@ -19,10 +20,15 @@ class Component:
         self.config = ComponentType(**config)
 
     def __call__(self, **kwargs):
-        chzzkchat = ChzzkChat(self.config.streamer_id, self.config.cookies.model_dump(), 
-                              get_logger(self.config.streamer_name, 'chat'),
-                              get_logger(self.config.streamer_name, 'streaming'))
+        producer = get_producer()
+        chzzkchat = ChzzkChat(
+            self.config.streamer_id,
+            self.config.streamer_name,
+            self.config.cookies.model_dump(), 
+            producer=producer,
+        )
         chzzkchat.run()
+        close_producer(producer=producer)
 
         return {
             **self.config.model_dump(),
@@ -37,10 +43,6 @@ if __name__ == "__main__":
         "NID_SES": "",
         "NID_AUT": "",
     }
-
-    # 채팅창으로 메세지 보내기
-    # mesaage = ' '
-    # chzzkchat.send(message=mesaage)
 
     config = {"streamer_id": streamer_id, "cookies": cookies, "streamer_name": streamer_name}
     component = Component(**config)

@@ -7,20 +7,20 @@ class CookiesType(base.BaseModel):
     NID_AUT: str
 
 
-class RequestChzzkChatCrawlMessage(base.RequestMessage):
+class RequestProducerMessage(base.RequestMessage):
     streamer_id: Optional[str] = None
     streamer_name: Optional[str] = None
     cookies: Optional[CookiesType] = None
 
 
-class ResponseChzzkChatCrawlMessage(RequestChzzkChatCrawlMessage):
+class ResponseProducerMessage(RequestProducerMessage):
     result: str  # "success" or "fail"
 
 
-class RequestChzzkStreamingCheckMessage(base.RequestMessage):
+class RequestStreamingCheckMessage(base.RequestMessage):
     streamer_id: Optional[str] = None
     cookies: Optional[CookiesType] = None
 
 
-class ResponseChzzkStreamingCheckMessage(RequestChzzkStreamingCheckMessage):
+class ResponseStreamingCheckMessage(RequestStreamingCheckMessage):
     result: str
