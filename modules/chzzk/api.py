@@ -4,7 +4,7 @@ from .constants import HEADERS
 
 
 def fetch_streamingCheck(streamer: str, cookies: dict) -> bool:
-    url = f"https://api.chzzk.naver.com/service/v1/channels/{streamer}/live-detail"
+    url = f"https://api.chzzk.naver.com/service/v3/channels/{streamer}/live-detail"
     try:
         response = requests.get(url, cookies=cookies, headers=HEADERS)
         response.raise_for_status()
@@ -56,15 +56,15 @@ def fetch_accessToken(chatChannelId, cookies: dict) -> str:
         raise e
 
 
-def fetch_userIdHash(cookies: dict) -> str:
+def fetch_userIdHash(cookies: dict) -> str | None:
     url = "https://comm-api.game.naver.com/nng_main/v1/user/getUserStatus"
     try:
         response = requests.get(url, cookies=cookies, headers=HEADERS)
         response.raise_for_status()
         response = response.json()
         return response["content"]["userIdHash"]
-    except Exception as e:
-        raise e
+    except Exception:
+        return None
 
 
 def fetch_channelEmojiPacks(streamer: str, cookies: dict) -> tuple:

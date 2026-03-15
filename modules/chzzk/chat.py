@@ -54,9 +54,13 @@ class ChzzkChat:
         self.accessToken, self.extraToken = api.fetch_accessToken(
             self.chatChannelId, self.cookies
         )
-        self.emojiPacks, self.subEmojiPacks = api.fetch_channelEmojiPacks(
-            self.streamer_id, self.cookies
-        )
+
+        # 쿠키 만료 시 READ 모드로 전환
+        if self.userIdHash is None:
+            self.logger.info("쿠키가 만료되어 READ 모드로 연결합니다.")
+            self.auth_mode = "READ"
+        else:
+            self.auth_mode = "SEND"
 
         self.connect()
 
@@ -86,7 +90,7 @@ class ChzzkChat:
                 "uid": self.userIdHash,
                 "devType": 2001,
                 "accTkn": self.accessToken,
-                "auth": "SEND",
+                "auth": self.auth_mode,
             },
         }
 
