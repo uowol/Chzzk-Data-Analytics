@@ -9,8 +9,6 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from modules.postgresql import get_connection
-from modules.postgresql.schema import init_schema
-
 from dashboard.style import apply_style, metric_card, section_title
 
 
@@ -81,7 +79,6 @@ st.markdown("<br>", unsafe_allow_html=True)
 section_title("필터")
 
 conn = get_connection()
-init_schema(conn)
 
 col_filter1, col_filter2 = st.columns(2)
 

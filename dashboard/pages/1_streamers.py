@@ -10,9 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from modules.chzzk.api import fetch_channelName, fetch_streamingCheck
 from modules.config import NID_AUT, NID_SES
 from modules.postgresql import get_connection
-from modules.postgresql.schema import init_schema
 
-from dashboard.crawler_manager import is_crawler_running, start_crawler, stop_crawler
 from dashboard.style import apply_style, badge, section_title
 
 st.set_page_config(page_title="스트리머 관리", page_icon="📡", layout="wide")
@@ -25,7 +23,6 @@ st.markdown("""
 
 # --- DB 초기화 ---
 conn = get_connection()
-init_schema(conn)
 
 # --- 스트리머 등록 ---
 section_title("스트리머 등록")
@@ -62,7 +59,7 @@ if add_clicked and input_url:
 section_title("등록된 스트리머")
 
 with conn.cursor() as cur:
-    cur.execute("SELECT streamer_id, streamer_name, created_at FROM streamers ORDER BY created_at")
+    cur.execute("SELECT streamer_id, streamer_name, is_active, created_at FROM streamers ORDER BY created_at")
     streamers = cur.fetchall()
 
 if not streamers:
@@ -75,16 +72,18 @@ if not streamers:
 else:
     cookies = {"NID_SES": NID_SES, "NID_AUT": NID_AUT}
 
-    for streamer_id, streamer_name, created_at in streamers:
-        # 상태 조회
+    for streamer_id, streamer_name, is_active, created_at in streamers:
+        # 방송 상태 조회
         try:
             is_live = fetch_streamingCheck(streamer_id, cookies)
         except Exception:
             is_live = False
-        crawler_on = is_crawler_running(streamer_id)
 
         live_badge = badge("LIVE", "live") if is_live else badge("OFFLINE", "offline")
-        crawler_badge = badge("수집 중", "crawler-on") if crawler_on else badge("대기", "crawler-off")
+        if is_active:
+            crawler_badge = badge("수집 중", "crawler-on") if is_live else badge("대기", "crawler-off")
+        else:
+            crawler_badge = badge("중지", "offline")
 
         with st.container(border=True):
             cols = st.columns([4, 2, 2, 1.5, 0.8])
@@ -105,22 +104,25 @@ else:
             with cols[3]:
                 toggled = st.toggle(
                     "크롤러",
-                    value=crawler_on,
+                    value=is_active,
                     key=f"toggle_{streamer_id}",
-                    disabled=not is_live and not crawler_on,
                     label_visibility="collapsed",
                 )
-                if toggled and not crawler_on:
-                    start_crawler(streamer_id, streamer_name)
+                if toggled and not is_active:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE streamers SET is_active = TRUE WHERE streamer_id = %s", (streamer_id,))
+                        conn.commit()
                     st.rerun()
-                elif not toggled and crawler_on:
-                    stop_crawler(streamer_id)
+                elif not toggled and is_active:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE streamers SET is_active = FALSE WHERE streamer_id = %s", (streamer_id,))
+                        conn.commit()
                     st.rerun()
 
             with cols[4]:
                 if st.button("삭제", key=f"del_{streamer_id}"):
-                    stop_crawler(streamer_id)
                     with conn.cursor() as cur:
+                        cur.execute("UPDATE streamers SET is_active = FALSE WHERE streamer_id = %s", (streamer_id,))
                         cur.execute("DELETE FROM streamers WHERE streamer_id = %s", (streamer_id,))
                         conn.commit()
                     st.rerun()

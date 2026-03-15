@@ -14,9 +14,6 @@ from kafka.admin import KafkaAdminClient
 
 from modules.config import KAFKA_BOOTSTRAP_SERVERS
 from modules.postgresql import get_connection
-from modules.postgresql.schema import init_schema
-
-from dashboard.crawler_manager import is_crawler_running
 from dashboard.style import apply_style, badge, metric_card, section_title
 
 st.set_page_config(page_title="Kafka 모니터링", page_icon="⚡", layout="wide")
@@ -141,74 +138,89 @@ for topic_meta in topics_metadata:
 
 offset_consumer.close()
 
-# --- 컨슈머 그룹 ---
+# --- 컨슈머 그룹 (5초마다 갱신) ---
 section_title("컨슈머 그룹")
 
-try:
-    groups = admin.list_consumer_groups()
-except Exception:
-    groups = []
 
-if not groups:
-    st.info("활성 컨슈머 그룹이 없습니다.")
-else:
-    for group_name, group_type in groups:
-        with st.container(border=True):
-            st.markdown(f"**{group_name}** ({group_type})")
+@st.fragment(run_every=5)
+def render_consumer_groups():
+    try:
+        _admin = KafkaAdminClient(
+            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+            client_id="dashboard-cg-monitor",
+        )
+        groups = _admin.list_consumer_groups()
+    except Exception:
+        groups = []
+        _admin = None
 
-            try:
-                offsets = admin.list_consumer_group_offsets(group_name)
+    if not groups:
+        st.info("활성 컨슈머 그룹이 없습니다.")
+    else:
+        for group_name, group_type in groups:
+            with st.container(border=True):
+                st.markdown(f"**{group_name}** ({group_type})")
 
-                if offsets:
-                    # 각 파티션의 lag 계산
-                    lag_consumer = _KafkaConsumer(
-                        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-                        client_id="dashboard-lag-check",
-                    )
+                try:
+                    offsets = _admin.list_consumer_group_offsets(group_name)
 
-                    cols_header = st.columns([2, 2, 2, 2])
-                    cols_header[0].markdown("**토픽**")
-                    cols_header[1].markdown("**현재 오프셋**")
-                    cols_header[2].markdown("**최신 오프셋**")
-                    cols_header[3].markdown("**Lag**")
-
-                    total_lag = 0
-                    for tp, offset_meta in offsets.items():
-                        lag_consumer.assign([tp])
-                        lag_consumer.seek_to_end(tp)
-                        end_offset = lag_consumer.position(tp)
-                        current = offset_meta.offset
-                        lag = max(0, end_offset - current)
-                        total_lag += lag
-
-                        lag_badge = badge(f"{lag:,}", "live" if lag == 0 else "offline")
-
-                        cols_row = st.columns([2, 2, 2, 2])
-                        cols_row[0].markdown(f"`{tp.topic}[{tp.partition}]`")
-                        cols_row[1].markdown(f"{current:,}")
-                        cols_row[2].markdown(f"{end_offset:,}")
-                        cols_row[3].markdown(lag_badge, unsafe_allow_html=True)
-
-                    lag_consumer.close()
-
-                    if total_lag == 0:
-                        st.markdown(badge("모든 메시지 소비 완료", "live"), unsafe_allow_html=True)
-                    else:
-                        st.markdown(
-                            badge(f"총 Lag: {total_lag:,}", "offline"),
-                            unsafe_allow_html=True,
+                    if offsets:
+                        lag_consumer = _KafkaConsumer(
+                            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+                            client_id="dashboard-lag-check",
                         )
-            except Exception as e:
-                st.warning(f"오프셋 조회 실패: {e}")
+
+                        cols_header = st.columns([2, 2, 2, 2])
+                        cols_header[0].markdown("**토픽**")
+                        cols_header[1].markdown("**현재 오프셋**")
+                        cols_header[2].markdown("**최신 오프셋**")
+                        cols_header[3].markdown("**Lag**")
+
+                        total_lag = 0
+                        for tp, offset_meta in offsets.items():
+                            lag_consumer.assign([tp])
+                            lag_consumer.seek_to_end(tp)
+                            end_offset = lag_consumer.position(tp)
+                            current = offset_meta.offset
+                            lag = max(0, end_offset - current)
+                            total_lag += lag
+
+                            lag_badge = badge(f"{lag:,}", "live" if lag == 0 else "offline")
+
+                            cols_row = st.columns([2, 2, 2, 2])
+                            cols_row[0].markdown(f"`{tp.topic}[{tp.partition}]`")
+                            cols_row[1].markdown(f"{current:,}")
+                            cols_row[2].markdown(f"{end_offset:,}")
+                            cols_row[3].markdown(lag_badge, unsafe_allow_html=True)
+
+                        lag_consumer.close()
+
+                        if total_lag == 0:
+                            st.markdown(badge("모든 메시지 소비 완료", "live"), unsafe_allow_html=True)
+                        else:
+                            st.markdown(
+                                badge(f"총 Lag: {total_lag:,}", "offline"),
+                                unsafe_allow_html=True,
+                            )
+                except Exception as e:
+                    st.warning(f"오프셋 조회 실패: {e}")
+
+    if _admin:
+        try:
+            _admin.close()
+        except Exception:
+            pass
+
+
+render_consumer_groups()
 
 # --- 프로듀서 (크롤러) 상태 ---
 section_title("프로듀서 (크롤러)")
 
 conn = get_connection()
-init_schema(conn)
 
 with conn.cursor() as cur:
-    cur.execute("SELECT streamer_id, streamer_name FROM streamers ORDER BY created_at")
+    cur.execute("SELECT streamer_id, streamer_name, is_active FROM streamers ORDER BY created_at")
     streamers = cur.fetchall()
 
 if not streamers:
@@ -219,14 +231,13 @@ else:
     cols_header[1].markdown("**상태**")
     cols_header[2].markdown("**토픽**")
 
-    for streamer_id, streamer_name in streamers:
-        running = is_crawler_running(streamer_id)
-        status_badge = badge("producing", "live") if running else badge("stopped", "offline")
+    for streamer_id, streamer_name, is_active in streamers:
+        status_badge = badge("producing", "live") if is_active else badge("stopped", "offline")
 
         cols_row = st.columns([3, 2, 3])
         cols_row[0].markdown(f"**{streamer_name}**")
         cols_row[1].markdown(status_badge, unsafe_allow_html=True)
-        cols_row[2].markdown("`chat`, `streaming`" if running else "-")
+        cols_row[2].markdown("`chat`, `streaming`" if is_active else "-")
 
 conn.close()
 

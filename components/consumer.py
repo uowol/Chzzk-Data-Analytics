@@ -1,4 +1,5 @@
 import datetime
+import time
 
 from modules.kafka.consumer import get_consumer
 from modules.postgresql import get_connection
@@ -16,6 +17,9 @@ INSERT_STREAMING = """
     VALUES (%(msg_id)s, %(ts)s, %(streamer)s, %(msg_type)s, %(category)s)
     ON CONFLICT (msg_id) DO NOTHING
 """
+
+BATCH_SIZE = 50
+FLUSH_INTERVAL = 2  # 초
 
 
 def _to_row(msg: dict) -> dict:
@@ -44,19 +48,19 @@ def run(topic: str):
 
     print(f"[Consumer] Listening on topic: {topic}")
 
+    batch = []
+    last_flush = time.monotonic()
+
     for msg in consumer:
         content = msg.value
-        row = _to_row(content)
+        batch.append(_to_row(content))
 
-        with conn.cursor() as cur:
-            cur.execute(insert_sql, row)
-            conn.commit()
-
-        print(f"  [{topic}] {row['msg_type']}: {row['msg_id']}")
-
-        if content.get("msg_type") == "STREAMING_END":
-            print(f"[Consumer] Streaming ended on topic: {topic}")
-            break
-
-    consumer.close()
-    conn.close()
+        now = time.monotonic()
+        if len(batch) >= BATCH_SIZE or (now - last_flush) >= FLUSH_INTERVAL:
+            with conn.cursor() as cur:
+                for row in batch:
+                    cur.execute(insert_sql, row)
+                conn.commit()
+            print(f"  [{topic}] flushed {len(batch)} rows")
+            batch.clear()
+            last_flush = now

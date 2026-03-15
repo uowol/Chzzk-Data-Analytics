@@ -34,12 +34,12 @@ CREATE INDEX IF NOT EXISTS idx_streaming_events_ts ON streaming_events (ts);
 CREATE TABLE IF NOT EXISTS streamers (
     streamer_id     TEXT PRIMARY KEY,
     streamer_name   TEXT NOT NULL,
+    is_active       BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMP DEFAULT NOW()
 );
 """
 
-
 def init_schema(connection):
     with connection.cursor() as cursor:
         cursor.execute(SCHEMA_SQL)
-        connection.commit()
+    connection.commit()

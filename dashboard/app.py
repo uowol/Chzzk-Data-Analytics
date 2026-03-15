@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dashboard.style import apply_style, metric_card, section_title
 from modules.postgresql import get_connection
-from modules.postgresql.schema import init_schema
 
 st.set_page_config(
     page_title="Chzzk Analytics",
@@ -38,7 +37,6 @@ st.divider()
 @st.fragment(run_every=5)
 def render_summary():
     conn = get_connection()
-    init_schema(conn)
 
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM chat_messages")
