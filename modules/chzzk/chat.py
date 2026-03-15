@@ -76,9 +76,9 @@ class ChzzkChat:
         else:
             self.auth_mode = "SEND"
 
-        # 주기적 체크용 타이머
-        self._last_streaming_check = 0.0
-        self._last_category_check = 0.0
+        # 주기적 체크용 타이머 (연결 직후 API 호출 방지)
+        self._last_streaming_check = time.monotonic()
+        self._last_category_check = time.monotonic()
 
         self.connect()
 
