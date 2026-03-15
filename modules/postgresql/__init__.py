@@ -1,27 +1,25 @@
 import psycopg2
 
+from modules.config import (
+    POSTGRES_HOST,
+    POSTGRES_PORT,
+    POSTGRES_DB,
+    POSTGRES_USER,
+    POSTGRES_PASSWORD,
+)
 
-def get_connection(
-    host: str, database: str, user: str, password: str, port: int = 5432
-) -> psycopg2.extensions.connection:
-    """
-    Create and return a PostgreSQL connection.
-    """
+
+def get_connection() -> psycopg2.extensions.connection:
     return psycopg2.connect(
-        host=host,
-        database=database,
-        user=user,
-        password=password,
-        port=port,
+        host=POSTGRES_HOST,
+        port=POSTGRES_PORT,
+        database=POSTGRES_DB,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
     )
 
-def execute_query(
-    connection: psycopg2.extensions.connection,
-    query: str
-) -> None:
-    """
-    Create a table in the PostgreSQL database.
-    """
+
+def execute_query(connection: psycopg2.extensions.connection, query: str, params=None):
     with connection.cursor() as cursor:
-        cursor.execute(query)
+        cursor.execute(query, params)
         connection.commit()
