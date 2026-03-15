@@ -5,7 +5,6 @@ from psycopg2.extras import execute_values
 
 from modules.kafka.consumer import get_consumer
 from modules.postgresql import get_connection
-from modules.postgresql.schema import init_schema
 
 
 CHAT_COLUMNS = ("msg_id", "ts", "streamer", "msg_type", "nickname", "message", "pay_amount", "month", "tier_name", "tier_no")
@@ -46,7 +45,6 @@ def _to_row(msg: dict) -> dict:
 
 def run(topic: str):
     conn = get_connection()
-    init_schema(conn)
 
     consumer = get_consumer(topic=topic)
     insert_sql = INSERT_CHAT if topic == "chat" else INSERT_STREAMING
