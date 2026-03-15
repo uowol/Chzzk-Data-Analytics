@@ -2,6 +2,7 @@ __*.yaml
 logs/*
 .claude/
 CLAUDE.md
+.crawler_pids.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

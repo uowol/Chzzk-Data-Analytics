@@ -30,6 +30,12 @@ CREATE TABLE IF NOT EXISTS streaming_events (
 
 CREATE INDEX IF NOT EXISTS idx_streaming_events_streamer ON streaming_events (streamer);
 CREATE INDEX IF NOT EXISTS idx_streaming_events_ts ON streaming_events (ts);
+
+CREATE TABLE IF NOT EXISTS streamers (
+    streamer_id     TEXT PRIMARY KEY,
+    streamer_name   TEXT NOT NULL,
+    created_at      TIMESTAMP DEFAULT NOW()
+);
 """
 
 
