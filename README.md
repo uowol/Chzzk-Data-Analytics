@@ -6,67 +6,47 @@ Chzzk(치지직) 스트리밍 플랫폼의 채팅·후원 데이터를 실시간
 - 과거 데이터 분석(Analysis)을 넘어 예측 등의 Analytics를 목표
 - LLM + RAG를 활용한 자연어 질의 기반 분석까지 확장 예정
 
-## 프로젝트 구조
+## 아키텍처
 
 ```
-.
-├── run_pipeline.py              # 메인 진입점 (streaming_check → producer + consumer 동시 실행)
-├── db_status.py                 # DB 적재 현황 조회
-├── pipelines/                   # 파이프라인 설정 파일 (YAML)
-│   └── crawl_chat.yaml          # 채팅 수집 파이프라인 템플릿
-├── components/                  # 파이프라인 구성 단위
-│   ├── streaming_check.py       # 방송 상태 폴링 (시작 대기)
-│   ├── producer.py              # WebSocket 채팅 크롤링 → Kafka 발행
-│   └── consumer.py              # Kafka 메시지 소비 → PostgreSQL 적재
-├── modules/                     # 핵심 모듈
-│   ├── config.py                # .env 기반 환경 설정 로드
-│   ├── chzzk/
-│   │   ├── api.py               # Chzzk API 클라이언트 (방송 상태, 채널 정보, 토큰)
-│   │   ├── chat.py              # WebSocket 채팅 핸들러 (연결, 수신, Kafka 발행)
-│   │   ├── enums.py             # 채팅 명령/타입 enum
-│   │   └── constants.py         # HTTP 헤더
-│   ├── kafka/
-│   │   ├── producer.py          # Kafka Producer 생성
-│   │   └── consumer.py          # Kafka Consumer 생성
-│   └── postgresql/
-│       ├── __init__.py          # PostgreSQL 연결 헬퍼
-│       └── schema.py            # 테이블 스키마 정의 (chat_messages, streaming_events)
-├── docker/
-│   └── docker-compose.yaml      # PostgreSQL + Zookeeper + Kafka + 앱
-├── Dockerfile                   # 앱 이미지 (python:3.12-slim + uv)
-├── .env                         # 환경 설정 (Kafka, PG 접속 정보, 쿠키)
-├── .devcontainer/
-│   └── devcontainer.json        # VS Code Dev Container 설정
-└── pyproject.toml               # 프로젝트 설정 및 의존성 (uv)
+┌─────────────────────────────────────────────────────────┐
+│  Orchestrator (DB 폴링 → 크롤러 스레드 자동 시작/중지)     │
+│                                                         │
+│  StreamingCheck → Producer → Kafka → Consumer → PostgreSQL│
+│  (방송 대기)    (WebSocket)   ↕        ↕       (적재)     │
+│                          chat 토픽  배치 INSERT           │
+│                       streaming 토픽                      │
+└─────────────────────────────────────────────────────────┘
+                            │
+                    Streamlit Dashboard
+                (실시간 모니터링 · 통계 · 제어)
 ```
 
-## 데이터 흐름
+### 핵심 모듈
 
-```
-StreamingCheck          Producer                    Consumer
-(API 폴링,         →  (WebSocket 채팅 크롤링)  →  (Kafka 소비 → PostgreSQL 적재)
- 방송 시작 대기)              │
-                     ┌───────┴───────┐
-                topic:chat      topic:streaming
-                     │               │
-                일반 채팅          카테고리 변경
-                도네이션          방송 종료
-                구독/삭제
-```
+| 모듈 | 역할 |
+|---|---|
+| `orchestrator.py` | DB `is_active` 플래그 폴링 → 크롤러 스레드 자동 관리 |
+| `components/producer.py` | WebSocket 채팅 크롤링 → Kafka 발행 |
+| `components/consumer.py` | Kafka 소비 → `execute_values` 배치 INSERT |
+| `components/streaming_check.py` | 방송 상태 API 폴링 (시작 대기) |
+| `modules/chzzk/` | Chzzk API 클라이언트, WebSocket 핸들러, 이모지 관리 |
+| `modules/kafka/` | Kafka producer/consumer 래퍼 |
+| `modules/postgresql/` | DB 연결 헬퍼 + 스키마 정의 |
+| `dashboard/` | Streamlit 대시보드 (스트리머 제어, 통계, DB 조회, Kafka 모니터링) |
 
-`run_pipeline.py` 실행 시 Consumer가 백그라운드 스레드로 자동 실행되어 Kafka 메시지를 PostgreSQL에 실시간 적재합니다.
+### 데이터 무결성
+
+- **결정적 msg_id**: `SHA256(cid:uid:msg:msgTime:idx)` → 동일 메시지는 항상 같은 ID
+- **DB 중복 방지**: `ON CONFLICT (msg_id) DO NOTHING`
+- **재연결 시 갭 최소화**: 최근 100건 메시지를 재처리하여 누락 방지
+- **타임스탬프**: 치지직 서버의 `msgTime`(채팅 발생 시점)을 `ts`에 저장
 
 ## 실행 방법
 
-### 1. 의존성 설치
+### 1. 환경 설정
 
-```bash
-uv sync
-```
-
-### 2. 환경 설정
-
-`.env.example`을 복사하여 `.env`를 생성하고, 네이버 로그인 쿠키를 입력합니다.
+`.env.example`을 복사하여 `.env`를 생성합니다.
 
 ```bash
 cp .env.example .env
@@ -85,15 +65,13 @@ NID_AUT=네이버_NID_AUT_쿠키
 
 - `NID_SES`, `NID_AUT`: 네이버 로그인 후 브라우저 개발자 도구(F12) → Application → Cookies에서 복사
 
-### 3. 인프라 실행
+### 2. Docker 실행
 
 ```bash
+# 인프라 + 앱 전체 실행
 docker compose -f docker/docker-compose.yaml up -d
-```
 
-### 4. Kafka 토픽 생성
-
-```bash
+# Kafka 토픽 생성 (최초 1회)
 docker compose -f docker/docker-compose.yaml exec broker \
   kafka-topics --create --topic chat --bootstrap-server broker:29092 \
   --partitions 1 --replication-factor 1
@@ -103,44 +81,34 @@ docker compose -f docker/docker-compose.yaml exec broker \
   --partitions 1 --replication-factor 1
 ```
 
-### 5. 파이프라인 설정
+### 3. 스트리머 등록 및 수집
 
-`pipelines/crawl_chat.yaml`을 복사하여 스트리머 정보를 입력합니다. (`__`로 시작하는 파일은 `.gitignore`로 관리됩니다.)
+대시보드(`http://localhost:8080`)의 스트리머 페이지에서 스트리머를 등록하고 `is_active` 토글로 수집을 제어합니다. Orchestrator가 DB를 폴링하여 크롤러를 자동 시작/중지합니다.
 
-```bash
-cp pipelines/crawl_chat.yaml pipelines/__my_streamer.yaml
-```
-
-```yaml
-streamer_id: "스트리머_채널_ID"
-streamer_name: "스트리머_이름"
-```
-
-- `streamer_id`: 치지직 채널 URL에서 확인 (`chzzk.naver.com/live/{streamer_id}`)
-
-### 6. 파이프라인 실행
+### 4. 로컬 개발
 
 ```bash
-uv run python run_pipeline.py --pipeline __my_streamer.yaml
+uv sync                  # 의존성 설치
+uv run ruff check .      # 린트
+uv run python orchestrator.py  # 로컬에서 직접 실행
 ```
 
-방송 시작까지 폴링 → 채팅 수집(Producer) + DB 적재(Consumer) 동시 실행 → 방송 종료 시 자동 종료됩니다.
+## 대시보드
 
-### 7. DB 현황 조회
+| 탭 | 기능 |
+|---|---|
+| 스트리머 | 등록/삭제, 수집 ON/OFF 토글, 방송 상태 |
+| 통계 | 스트리머별 메시지 유형, 분 단위 수집량 라인 차트, 도네이션 랭킹 |
+| 데이터베이스 | 테이블 조회, 자동 갱신 토글 |
+| Kafka | 브로커/토픽/컨슈머 그룹 상태, Lag 모니터링, 시스템 리소스 |
 
-```bash
-uv run python db_status.py        # 최근 20건
-uv run python db_status.py -n 50  # 최근 50건
-```
+## 기술 스택
 
-## 개발 환경
-
-```bash
-uv sync                  # 의존성 설치 (dev 포함)
-uv run ruff check .      # 린트 체크
-```
-
-VS Code Dev Container를 사용할 경우, "Reopen in Container"로 Docker 기반 개발 환경에 접속할 수 있습니다.
+- Python 3.12+, uv
+- Kafka (Confluent), PostgreSQL 14
+- Streamlit (대시보드)
+- websocket-client, kafka-python, psycopg2
+- Docker Compose
 
 ## Reference
 
