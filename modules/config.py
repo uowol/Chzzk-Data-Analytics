@@ -11,3 +11,6 @@ POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 POSTGRES_DB = os.getenv("POSTGRES_DB", "chzzk")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
+
+NID_SES = os.getenv("NID_SES", "")
+NID_AUT = os.getenv("NID_AUT", "")

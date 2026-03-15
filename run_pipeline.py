@@ -4,46 +4,12 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
-from classes.chzzk import (
-    RequestProducerMessage,
-    RequestStreamingCheckMessage
-)
-from components.producer import Component as ProducerComponent
-from components.streaming_check import Component as StreamingCheckComponent
+from components import streaming_check, producer
 
 
-class PipelineType(BaseModel):
-    streaming_check: RequestStreamingCheckMessage | None = None
-    producer: RequestProducerMessage | None = None
-
-
-class Pipeline:
-    def __init__(self, **config):
-        self.config = PipelineType(**config)
-
-    def __call__(self):
-        def exec_component(Component, request_message: dict):
-            print(f"# ===== exec_component: {Component} =====")
-            component = Component(**request_message)
-            response_message = component()
-            assert (
-                response_message["result"] == "success"
-            ), f"exec_component failed: {response_message}"
-            return response_message
-
-        if self.config.streaming_check is not None:
-            request_message = self.config.streaming_check
-            exec_component(
-                StreamingCheckComponent, request_message.model_dump()
-            )
-            self.config.producer = RequestProducerMessage(
-                streamer_id=request_message.streamer_id,
-                streamer_name=self.config.producer.streamer_name if self.config.producer is not None else request_message.streamer_id,
-                cookies=request_message.cookies
-            )
-        if self.config.producer is not None:
-            request_message = self.config.producer
-            exec_component(ProducerComponent, request_message.model_dump())
+class PipelineConfig(BaseModel):
+    streamer_id: str
+    streamer_name: str
 
 
 def main():
@@ -52,10 +18,15 @@ def main():
     args = parser.parse_args()
 
     with open(Path("pipelines") / args.pipeline, "r") as fp:
-        config = yaml.safe_load(fp) or {}
+        raw = yaml.safe_load(fp) or {}
 
-    pipeline = Pipeline(**config)
-    pipeline()
+    config = PipelineConfig(**raw)
+
+    print(f"# ===== streaming_check: {config.streamer_id} =====")
+    streaming_check.run(config.streamer_id)
+
+    print(f"# ===== producer: {config.streamer_name} =====")
+    producer.run(config.streamer_id, config.streamer_name)
 
 
 if __name__ == "__main__":

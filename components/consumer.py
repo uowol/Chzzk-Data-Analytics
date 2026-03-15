@@ -1,14 +1,8 @@
 import datetime
 
-from pydantic import BaseModel
-
 from modules.kafka.consumer import get_consumer
 from modules.postgresql import get_connection
 from modules.postgresql.schema import init_schema
-
-
-class ComponentType(BaseModel):
-    topic: str
 
 
 INSERT_CHAT = """
@@ -41,38 +35,28 @@ def _to_row(msg: dict) -> dict:
     }
 
 
-class Component:
-    def __init__(self, **config):
-        self.config = ComponentType(**config)
+def run(topic: str):
+    conn = get_connection()
+    init_schema(conn)
 
-    def __call__(self, **kwargs):
-        conn = get_connection()
-        init_schema(conn)
+    consumer = get_consumer(topic=topic)
+    insert_sql = INSERT_CHAT if topic == "chat" else INSERT_STREAMING
 
-        consumer = get_consumer(topic=self.config.topic)
-        topic = self.config.topic
-        insert_sql = INSERT_CHAT if topic == "chat" else INSERT_STREAMING
+    print(f"[Consumer] Listening on topic: {topic}")
 
-        print(f"[Consumer] Listening on topic: {topic}")
+    for msg in consumer:
+        content = msg.value
+        row = _to_row(content)
 
-        for msg in consumer:
-            content = msg.value
-            row = _to_row(content)
+        with conn.cursor() as cur:
+            cur.execute(insert_sql, row)
+            conn.commit()
 
-            with conn.cursor() as cur:
-                cur.execute(insert_sql, row)
-                conn.commit()
+        print(f"  [{topic}] {row['msg_type']}: {row['msg_id']}")
 
-            print(f"  [{topic}] {row['msg_type']}: {row['msg_id']}")
+        if content.get("msg_type") == "STREAMING_END":
+            print(f"[Consumer] Streaming ended on topic: {topic}")
+            break
 
-            if content.get("msg_type") == "STREAMING_END":
-                print(f"[Consumer] Streaming ended on topic: {topic}")
-                break
-
-        consumer.close()
-        conn.close()
-
-        return {
-            **self.config.model_dump(),
-            "result": "success",
-        }
+    consumer.close()
+    conn.close()

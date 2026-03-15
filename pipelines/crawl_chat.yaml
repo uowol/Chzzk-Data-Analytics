@@ -1,7 +1,2 @@
-streaming_check:
-  streamer_id: "your_streamer_id_here"
-  cookies:
-    NID_SES: "your_nid_ses_value"
-    NID_AUT: "your_nid_aut_value"
-producer:
-  streamer_name: 'your_streamer_name_here'
+streamer_id: "your_streamer_id_here"
+streamer_name: "your_streamer_name_here"
