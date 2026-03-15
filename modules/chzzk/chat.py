@@ -217,7 +217,6 @@ class ChzzkChat:
                     except (KeyError, json.JSONDecodeError):
                         continue
 
-                    ts = chat_data["msgTime"] / 1000
                     msg = chat_data["msg"]
 
                     if current_type == enums.ChzzkChatType.DONATION:

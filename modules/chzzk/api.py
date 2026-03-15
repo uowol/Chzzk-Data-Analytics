@@ -1,5 +1,3 @@
-import hashlib
-
 import requests
 
 from .constants import HEADERS
@@ -30,7 +28,7 @@ def fetch_chatChannelId(streamer: str, cookies: dict) -> list:
         chatChannelId = response["content"]["chatChannelId"]
         liveCategory = response["content"]["liveCategory"]
         
-        assert chatChannelId != None
+        assert chatChannelId is not None
         return [chatChannelId, liveCategory]
     except Exception as e:
         raise e
