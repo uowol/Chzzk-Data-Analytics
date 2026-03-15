@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import threading
 import time
 import uuid
 
@@ -8,6 +9,7 @@ from kafka import KafkaProducer
 from websocket import WebSocket
 
 from . import api, enums
+from .emoji import EmojiManager
 
 
 def get_logger(streamer_name: str) -> logging.Logger:
@@ -46,8 +48,10 @@ CATEGORY_CHECK_INTERVAL = 30
 class ChzzkChat:
     def __init__(self, streamer_id: str, streamer_name: str,
                  cookies: dict,
-                 producer: KafkaProducer):
+                 producer: KafkaProducer,
+                 shutdown_event: threading.Event | None = None):
         self.producer = producer
+        self._shutdown_event = shutdown_event or threading.Event()
         self.logger = get_logger(streamer_name)
 
         self.streamer_id = streamer_id
@@ -62,6 +66,8 @@ class ChzzkChat:
         self.accessToken, self.extraToken = api.fetch_accessToken(
             self.chatChannelId, self.cookies
         )
+
+        self.emoji = EmojiManager(streamer_id, cookies)
 
         # 쿠키 만료 시 READ 모드로 전환
         if self.userIdHash is None:
@@ -185,7 +191,7 @@ class ChzzkChat:
         return False
 
     def run(self):
-        while True:
+        while not self._shutdown_event.is_set():
             try:
                 # 방송 종료 체크 (주기적)
                 if self._should_check_streaming():
@@ -259,7 +265,7 @@ class ChzzkChat:
                     except (KeyError, json.JSONDecodeError):
                         continue
 
-                    msg = chat_data["msg"]
+                    msg = self.emoji.resolve(chat_data["msg"]) if chat_data["msg"] else ""
 
                     if current_type == enums.ChzzkChatType.DONATION:
                         self._publish("chat", "DONATION", {

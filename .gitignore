@@ -3,6 +3,7 @@ logs/*
 .claude/
 CLAUDE.md
 .crawler_pids.json
+data/emojis/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
