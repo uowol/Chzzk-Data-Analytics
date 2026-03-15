@@ -7,7 +7,7 @@ streamers 테이블의 is_active 플래그를 폴링하여
 import threading
 import time
 
-from components import streaming_check, producer, consumer
+from components import streaming_check, producer, consumer, keyword_analyzer
 from modules.postgresql import get_connection
 from modules.postgresql.schema import init_schema
 
@@ -55,6 +55,11 @@ def main():
         t = threading.Thread(target=consumer.run, args=(topic,), daemon=True)
         t.start()
         print(f"[Orchestrator] Consumer 시작: {topic}")
+
+    # 키워드 배치 분석 스레드
+    t = threading.Thread(target=keyword_analyzer.run, daemon=True)
+    t.start()
+    print("[Orchestrator] Keyword Analyzer 시작")
 
     active_crawlers: dict[str, threading.Thread] = {}
     shutdown_events: dict[str, threading.Event] = {}
