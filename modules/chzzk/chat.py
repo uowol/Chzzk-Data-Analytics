@@ -304,6 +304,11 @@ class ChzzkChat:
                     self.connect()
                     continue
 
+                if not raw_message:
+                    self.logger.info("WebSocket 빈 응답, 재연결 중...")
+                    self.connect()
+                    continue
+
                 raw_message = json.loads(raw_message)
                 chat_cmd = raw_message["cmd"]
 
