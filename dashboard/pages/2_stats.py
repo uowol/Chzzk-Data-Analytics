@@ -140,19 +140,19 @@ def render_stats():
     else:
         st.info("데이터가 없습니다.")
 
-    # 시간대별 수집량 (스트리머별 라인 차트)
+    # 시간대별 수집량 (스트리머별 라인 차트, 분 단위)
     section_title("시간대별 수집량")
 
     query_hourly = f"""
-        SELECT date_trunc('hour', ts) as hour, streamer, count(*) as cnt
+        SELECT date_trunc('minute', ts) as minute, streamer, count(*) as cnt
         FROM chat_messages {where_sql}
-        GROUP BY hour, streamer ORDER BY hour
+        GROUP BY minute, streamer ORDER BY minute
     """
     df_hourly = query_df(_conn, query_hourly, params or None)
 
     if not df_hourly.empty:
         pivot_hourly = df_hourly.pivot_table(
-            index="hour", columns="streamer", values="cnt", fill_value=0, aggfunc="sum"
+            index="minute", columns="streamer", values="cnt", fill_value=0, aggfunc="sum"
         )
         st.line_chart(pivot_hourly)
     else:
