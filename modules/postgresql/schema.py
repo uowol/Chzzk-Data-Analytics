@@ -37,6 +37,30 @@ CREATE TABLE IF NOT EXISTS streamers (
     is_active       BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS keyword_counts (
+    id              SERIAL PRIMARY KEY,
+    window_start    TIMESTAMP NOT NULL,
+    streamer        TEXT NOT NULL,
+    keyword         TEXT NOT NULL,
+    pos             TEXT NOT NULL,
+    count           INTEGER NOT NULL DEFAULT 1,
+    created_at      TIMESTAMP DEFAULT NOW(),
+    UNIQUE (window_start, streamer, keyword, pos)
+);
+
+CREATE INDEX IF NOT EXISTS idx_keyword_counts_window ON keyword_counts (window_start);
+CREATE INDEX IF NOT EXISTS idx_keyword_counts_streamer ON keyword_counts (streamer);
+CREATE INDEX IF NOT EXISTS idx_keyword_counts_keyword ON keyword_counts (keyword);
+
+CREATE TABLE IF NOT EXISTS keyword_settings (
+    key     TEXT PRIMARY KEY,
+    value   TEXT NOT NULL
+);
+
+INSERT INTO keyword_settings (key, value)
+VALUES ('chat_threshold', '500'), ('last_analyzed_at', '1970-01-01T00:00:00')
+ON CONFLICT (key) DO NOTHING;
 """
 
 def init_schema(connection):

@@ -35,7 +35,7 @@ with col_input:
         label_visibility="collapsed",
     )
 with col_btn:
-    add_clicked = st.button("등록", use_container_width=True, type="primary")
+    add_clicked = st.button("등록", width="stretch", type="primary")
 
 if add_clicked and input_url:
     streamer_id = input_url.strip().rstrip("/").split("/")[-1]

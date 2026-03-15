@@ -115,7 +115,7 @@ with tab_single:
             label_visibility="collapsed",
         )
     with col_del:
-        if st.button("삭제", key="btn_del_single", use_container_width=True):
+        if st.button("삭제", key="btn_del_single", width="stretch"):
             if msg_id_to_delete:
                 pk_col = "streamer_id" if table == "streamers" else "msg_id"
                 with conn.cursor() as cur:
@@ -180,7 +180,7 @@ sql_input = st.text_area(
 
 col_sql1, col_sql2 = st.columns([1, 7])
 with col_sql1:
-    run_sql = st.button("실행", type="primary", use_container_width=True)
+    run_sql = st.button("실행", type="primary", width="stretch")
 
 if run_sql and sql_input:
     try:

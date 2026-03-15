@@ -17,6 +17,7 @@ dependencies = [
     "psycopg2-binary>=2.9.10",
     "streamlit>=1.45.0",
     "psutil>=7.0.0",
+    "kiwipiepy>=0.18",
 ]
 
 [dependency-groups]

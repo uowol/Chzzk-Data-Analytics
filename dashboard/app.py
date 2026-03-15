@@ -64,13 +64,15 @@ st.markdown("<br>", unsafe_allow_html=True)
 # --- 네비게이션 ---
 section_title("바로가기")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-    st.page_link("pages/1_streamers.py", label="📡  스트리머 관리", use_container_width=True)
+    st.page_link("pages/1_streamers.py", label="📡  스트리머 관리", width="stretch")
 with col2:
-    st.page_link("pages/2_stats.py", label="📈  수집 통계", use_container_width=True)
+    st.page_link("pages/2_stats.py", label="📈  수집 통계", width="stretch")
 with col3:
-    st.page_link("pages/3_database.py", label="🗄️  데이터베이스", use_container_width=True)
+    st.page_link("pages/3_database.py", label="🗄️  데이터베이스", width="stretch")
 with col4:
-    st.page_link("pages/4_kafka.py", label="⚡  Kafka", use_container_width=True)
+    st.page_link("pages/4_kafka.py", label="⚡  Kafka", width="stretch")
+with col5:
+    st.page_link("pages/5_keywords.py", label="🔤  키워드 분석", width="stretch")
