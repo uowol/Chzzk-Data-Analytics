@@ -65,6 +65,10 @@ Producer가 Kafka에 발행하는 JSON: `msg_id`, `ts`, `streamer_name`, `msg_ty
 - requests (API 호출)
 - ruff (lint, dev dependency)
 
+## Important Notes
+
+- 이 프로젝트는 배포용 라이브러리가 아닌 **애플리케이션**이므로, `pyproject.toml`에 `[build-system]`을 정의하지 않고 `[tool.uv] package = false`를 사용한다. hatchling/setuptools 등의 build-backend를 지정하면 패키지 디렉토리를 찾지 못해 빌드가 실패한다.
+
 ## Conventions
 
 - 커밋 메시지 접두사: `add:`, `refact:`, `fix:` 등 (소문자, 한국어 혼용)
