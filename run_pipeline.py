@@ -1,6 +1,5 @@
 import argparse
 from pathlib import Path
-from typing import Optional
 
 import yaml
 from pydantic import BaseModel
@@ -14,18 +13,16 @@ from components.streaming_check import Component as StreamingCheckComponent
 
 
 class PipelineType(BaseModel):
-    streaming_check: Optional[RequestStreamingCheckMessage] = None
-    producer: Optional[RequestProducerMessage] = None
+    streaming_check: RequestStreamingCheckMessage | None = None
+    producer: RequestProducerMessage | None = None
 
 
 class Pipeline:
     def __init__(self, **config):
-        self.config = PipelineType(**config)    # Validate the config against PipelineType
+        self.config = PipelineType(**config)
 
     def __call__(self):
-        def exec_component(
-            Component, request_message: dict
-        ):
+        def exec_component(Component, request_message: dict):
             print(f"# ===== exec_component: {Component} =====")
             component = Component(**request_message)
             response_message = component()
@@ -36,7 +33,7 @@ class Pipeline:
 
         if self.config.streaming_check is not None:
             request_message = self.config.streaming_check
-            response_message = exec_component(
+            exec_component(
                 StreamingCheckComponent, request_message.model_dump()
             )
             self.config.producer = RequestProducerMessage(
@@ -46,22 +43,16 @@ class Pipeline:
             )
         if self.config.producer is not None:
             request_message = self.config.producer
-            response_message = exec_component(ProducerComponent, request_message.model_dump())
+            exec_component(ProducerComponent, request_message.model_dump())
 
 
-def init():
+def main():
     parser = argparse.ArgumentParser(description="Run a pipeline")
     parser.add_argument("--pipeline", type=str, metavar="PIPELINE", required=True)
     args = parser.parse_args()
 
-    return args
-
-
-def main():
-    args = init()
     with open(Path("pipelines") / args.pipeline, "r") as fp:
-        config = yaml.safe_load(fp)
-        config = config if config is not None else {}
+        config = yaml.safe_load(fp) or {}
 
     pipeline = Pipeline(**config)
     pipeline()

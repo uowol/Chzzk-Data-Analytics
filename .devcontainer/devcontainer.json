@@ -1,15 +1,11 @@
-// For format details, see https://aka.ms/devcontainer.json. For config options, see the
 {
 	"build": {
 		"context": "..",
-		"dockerfile": "../Dockerfile",
-		"args": {
-			"USER_NAME": "dev"
-		}
+		"dockerfile": "../Dockerfile"
 	},
 	"name": "chzzk-data-analytics",
 	"workspaceFolder": "/home/chzzk-data-analytics",
-	"postCreateCommand": "poetry install --no-root",
+	"postCreateCommand": "uv sync",
 	"customizations": {
 		"vscode": {
 			"extensions": [

@@ -1,8 +1,5 @@
-import sys
-
-sys.path.append("/home/dev/data-analysis")
-
 import time
+
 from pydantic import BaseModel
 
 from classes.chzzk import CookiesType
@@ -27,7 +24,7 @@ class Component:
             else:
                 print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - Streaming is offline.")
             time.sleep(10)
-            
+
         return {
             **self.config.model_dump(),
             "result": "success",
@@ -35,22 +32,7 @@ class Component:
 
     def check_streaming(self, streamer_id: str, cookies: CookiesType) -> bool:
         try:
-            is_streaming = fetch_streamingCheck(streamer_id, cookies.model_dump())
-            return is_streaming
+            return fetch_streamingCheck(streamer_id, cookies.model_dump())
         except Exception as e:
             print(f"Error checking streaming status for {streamer_id}: {e}")
             return False
-
-
-if __name__ == "__main__":
-    streamer_id = "17f0cfcba4ff608de5eabb5110d134d0"
-    NID_SES= ""
-    NID_AUT= ""
-
-    config = {"streamer_id": streamer_id, "cookies": {
-        "NID_SES": NID_SES,
-        "NID_AUT": NID_AUT
-    }}
-    component = Component(**config)
-    res = component()
-    # print(res)

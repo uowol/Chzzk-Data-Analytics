@@ -1,4 +1,3 @@
-from typing import Dict, List, Optional, Union
 from classes import base
 
 
@@ -8,19 +7,11 @@ class CookiesType(base.BaseModel):
 
 
 class RequestProducerMessage(base.RequestMessage):
-    streamer_id: Optional[str] = None
-    streamer_name: Optional[str] = None
-    cookies: Optional[CookiesType] = None
-
-
-class ResponseProducerMessage(RequestProducerMessage):
-    result: str  # "success" or "fail"
+    streamer_id: str | None = None
+    streamer_name: str | None = None
+    cookies: CookiesType | None = None
 
 
 class RequestStreamingCheckMessage(base.RequestMessage):
-    streamer_id: Optional[str] = None
-    cookies: Optional[CookiesType] = None
-
-
-class ResponseStreamingCheckMessage(RequestStreamingCheckMessage):
-    result: str
+    streamer_id: str | None = None
+    cookies: CookiesType | None = None
