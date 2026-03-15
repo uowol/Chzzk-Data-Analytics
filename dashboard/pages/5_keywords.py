@@ -19,6 +19,25 @@ EMOJI_TAG_RE = re.compile(r"\[emoji:([a-zA-Z0-9_]+):([^\]]+)\]")
 
 _b64_cache: dict[str, str] = {}
 
+# 자음/모음만으로 구성된 메시지 필터 (ㅋㅋㅋ, ㅎㅎ, ㅠㅠ 등)
+JAMO_ONLY_RE = re.compile(r"^[\u3131-\u3163\s.,!?~]+$")
+
+
+def _is_noise_message(text: str) -> bool:
+    """타임라인에서 필터링할 노이즈 메시지인지 판별한다."""
+    if not text:
+        return True
+    stripped = EMOJI_TAG_RE.sub("", text).strip()
+    if not stripped:
+        return True
+    if JAMO_ONLY_RE.match(stripped):
+        return True
+    # 단일 문자 반복 (aaaa 등) — 한글 완성형은 제외
+    chars = stripped.replace(" ", "")
+    if len(set(chars)) == 1 and len(chars) >= 3:
+        return True
+    return False
+
 
 def _emoji_to_b64(filename: str) -> str | None:
     if filename in _b64_cache:
@@ -35,6 +54,7 @@ def _emoji_to_b64(filename: str) -> str | None:
 
 
 def render_message(text: str) -> str:
+    """[emoji:id:filename] 패턴을 인라인 이미지로 치환한다."""
     if not text:
         return ""
     escaped = html.escape(text)
@@ -74,6 +94,45 @@ def _set_setting(conn, key: str, value: str):
             (key, value),
         )
     conn.commit()
+
+
+def _build_timeline_html(df_timeline, top_msgs_by_min: dict, max_count: int) -> str:
+    """분당 채팅 횟수 + 주요 메시지를 HTML 타임라인으로 렌더링한다."""
+    rows_html = []
+    for _, row in df_timeline.iterrows():
+        minute = row["minute"]
+        cnt = int(row["cnt"])
+        time_label = minute.strftime("%H:%M")
+        bar_pct = (cnt / max_count * 100) if max_count > 0 else 0
+
+        # 해당 분의 대표 메시지 (이모지 포함 HTML, 가로 나열)
+        key = str(minute)
+        msgs = top_msgs_by_min.get(key, [])
+        msgs_html = ""
+        if msgs:
+            sep = '<span style="color:#d1d5db; margin:0 4px;">|</span>'
+            msg_items = sep.join(
+                f'<span>{render_message(m)}</span>'
+                for m in msgs[:4]
+            )
+            msgs_html = f'<div style="font-size:0.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{msg_items}</div>'
+
+        rows_html.append(
+            f'<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid #f3f4f6; min-height:32px;">'
+            f'  <span style="min-width:45px; font-size:0.82rem; color:#6b7280; font-weight:600; text-align:right;">{time_label}</span>'
+            f'  <span style="min-width:40px; font-size:0.75rem; color:#9ca3af; text-align:right;">{cnt:,}</span>'
+            f'  <div style="flex:1; display:flex; align-items:center; gap:10px;">'
+            f'    <div style="width:{bar_pct:.1f}%; min-width:2px; height:22px; background:linear-gradient(90deg, #4A90D9, #667eea); border-radius:3px;"></div>'
+            f'    {msgs_html}'
+            f'  </div>'
+            f'</div>'
+        )
+
+    return (
+        '<div style="max-height:700px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:10px; padding:10px 14px; background:#fafbfc;">'
+        + "".join(rows_html)
+        + '</div>'
+    )
 
 
 st.set_page_config(page_title="키워드 분석", page_icon="🔤", layout="wide")
@@ -190,7 +249,63 @@ if time_interval:
 chat_where_sql = "WHERE " + " AND ".join(chat_where_clauses)
 
 
-# --- 실시간 갱신 영역 ---
+# --- 채팅 타임라인 (fragment 밖 — 버튼으로 새로고침) ---
+section_title("채팅 타임라인")
+
+if st.button("타임라인 새로고침"):
+    st.session_state["timeline_ver"] = st.session_state.get("timeline_ver", 0) + 1
+
+tl_conn = get_connection()
+
+df_timeline = query_df(tl_conn, f"""
+    SELECT date_trunc('minute', ts) as minute, count(*) as cnt
+    FROM chat_messages {chat_where_sql}
+    GROUP BY minute ORDER BY minute DESC
+""", chat_params or None)
+
+if not df_timeline.empty and len(df_timeline) >= 2:
+    df_top_msgs = query_df(tl_conn, f"""
+        SELECT minute, message, msg_cnt FROM (
+            SELECT date_trunc('minute', ts) as minute,
+                   message, count(*) as msg_cnt,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY date_trunc('minute', ts)
+                       ORDER BY count(*) DESC
+                   ) as rn
+            FROM chat_messages {chat_where_sql}
+              AND message IS NOT NULL AND message != ''
+            GROUP BY date_trunc('minute', ts), message
+            HAVING count(*) >= 2
+        ) ranked WHERE rn <= 10
+        ORDER BY minute, rn
+    """, chat_params or None)
+
+    top_msgs_by_min: dict[str, list[str]] = {}
+    if not df_top_msgs.empty:
+        for _, r in df_top_msgs.iterrows():
+            key = str(r["minute"])
+            if key not in top_msgs_by_min:
+                top_msgs_by_min[key] = []
+            msg_text = str(r["message"])
+            if len(top_msgs_by_min[key]) >= 4:
+                continue
+            if _is_noise_message(msg_text):
+                continue
+            if len(msg_text) <= 40:
+                top_msgs_by_min[key].append(msg_text)
+
+    max_count = int(df_timeline["cnt"].max())
+    timeline_html = _build_timeline_html(df_timeline, top_msgs_by_min, max_count)
+    st.markdown(timeline_html, unsafe_allow_html=True)
+else:
+    st.info("타임라인 데이터가 없습니다.")
+
+tl_conn.close()
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+
+# --- 실시간 갱신 영역 (경량 섹션만) ---
 @st.fragment(run_every=5)
 def render_keywords():
     _conn = get_connection()
