@@ -9,8 +9,6 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from modules.postgresql import get_connection
-from modules.postgresql.schema import init_schema
-
 from dashboard.style import apply_style, section_title
 
 
@@ -32,7 +30,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 conn = get_connection()
-init_schema(conn)
 
 # --- 테이블 선택 + 필터 ---
 section_title("조회")
@@ -81,17 +78,27 @@ where_sql = "WHERE " + " AND ".join(filter_clauses) if filter_clauses else ""
 order_by = "ORDER BY created_at DESC" if table == "streamers" else "ORDER BY ts DESC"
 
 # --- 데이터 테이블 ---
-df = query_df(conn, f"SELECT * FROM {table} {where_sql} {order_by} LIMIT %s", filter_params + [limit])
+auto_refresh = st.toggle("자동 갱신", value=False, key="db_auto_refresh")
 
-st.markdown(
-    f'<p style="color:#6b7280; margin: 0.5rem 0;">총 <b>{len(df)}</b>건 조회됨</p>',
-    unsafe_allow_html=True,
-)
 
-if df.empty:
-    st.info("데이터가 없습니다.")
-else:
-    st.dataframe(df, width="stretch", hide_index=True, height=400)
+@st.fragment(run_every=5 if auto_refresh else None)
+def render_data_table():
+    _conn = get_connection()
+    df = query_df(_conn, f"SELECT * FROM {table} {where_sql} {order_by} LIMIT %s", filter_params + [limit])
+    _conn.close()
+
+    st.markdown(
+        f'<p style="color:#6b7280; margin: 0.5rem 0;">총 <b>{len(df)}</b>건 조회됨</p>',
+        unsafe_allow_html=True,
+    )
+
+    if df.empty:
+        st.info("데이터가 없습니다.")
+    else:
+        st.dataframe(df, width="stretch", hide_index=True, height=400)
+
+
+render_data_table()
 
 # --- 삭제 ---
 section_title("데이터 삭제")
