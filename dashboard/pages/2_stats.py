@@ -112,71 +112,83 @@ if selected_type != "전체":
     params.append(selected_type)
 where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
-# --- 스트리머별 유형 통계 ---
-section_title("스트리머별 메시지 유형")
+# --- 스트리머별 유형 통계 + 시간대별 수집량 + 도네이션 랭킹 (5초 갱신) ---
+@st.fragment(run_every=5)
+def render_stats():
+    _conn = get_connection()
 
-query = f"""
-    SELECT streamer, msg_type, count(*) as cnt
-    FROM chat_messages {where_sql}
-    GROUP BY streamer, msg_type
-    ORDER BY streamer, cnt DESC
-"""
-df_types = query_df(conn, query, params or None)
+    # 스트리머별 메시지 유형
+    section_title("스트리머별 메시지 유형")
 
-if not df_types.empty:
-    pivot = df_types.pivot_table(
-        index="streamer", columns="msg_type", values="cnt", fill_value=0, aggfunc="sum"
-    )
-    tab1, tab2 = st.tabs(["테이블", "차트"])
-    with tab1:
-        st.dataframe(pivot, width="stretch")
-    with tab2:
-        st.bar_chart(pivot)
-else:
-    st.info("데이터가 없습니다.")
+    query = f"""
+        SELECT streamer, msg_type, count(*) as cnt
+        FROM chat_messages {where_sql}
+        GROUP BY streamer, msg_type
+        ORDER BY streamer, cnt DESC
+    """
+    df_types = query_df(_conn, query, params or None)
 
-# --- 시간대별 수집량 ---
-section_title("시간대별 수집량")
+    if not df_types.empty:
+        pivot = df_types.pivot_table(
+            index="streamer", columns="msg_type", values="cnt", fill_value=0, aggfunc="sum"
+        )
+        tab1, tab2 = st.tabs(["테이블", "차트"])
+        with tab1:
+            st.dataframe(pivot, use_container_width=True)
+        with tab2:
+            st.bar_chart(pivot)
+    else:
+        st.info("데이터가 없습니다.")
 
-query_hourly = f"""
-    SELECT date_trunc('hour', ts) as hour, count(*) as cnt
-    FROM chat_messages {where_sql}
-    GROUP BY hour ORDER BY hour
-"""
-df_hourly = query_df(conn, query_hourly, params or None)
+    # 시간대별 수집량 (스트리머별 라인 차트)
+    section_title("시간대별 수집량")
 
-if not df_hourly.empty:
-    df_hourly = df_hourly.set_index("hour")
-    st.area_chart(df_hourly)
-else:
-    st.info("데이터가 없습니다.")
+    query_hourly = f"""
+        SELECT date_trunc('hour', ts) as hour, streamer, count(*) as cnt
+        FROM chat_messages {where_sql}
+        GROUP BY hour, streamer ORDER BY hour
+    """
+    df_hourly = query_df(_conn, query_hourly, params or None)
 
-# --- 도네이션 랭킹 ---
-section_title("도네이션 랭킹")
+    if not df_hourly.empty:
+        pivot_hourly = df_hourly.pivot_table(
+            index="hour", columns="streamer", values="cnt", fill_value=0, aggfunc="sum"
+        )
+        st.line_chart(pivot_hourly)
+    else:
+        st.info("데이터가 없습니다.")
 
-donation_where = where_clauses.copy()
-donation_params = params.copy()
-if selected_type == "전체":
-    donation_where.append("msg_type = %s")
-    donation_params.append("DONATION")
-donation_where_sql = "WHERE " + " AND ".join(donation_where) if donation_where else ""
+    # 도네이션 랭킹
+    section_title("도네이션 랭킹")
 
-query_top = f"""
-    SELECT nickname, count(*) as cnt, COALESCE(sum(pay_amount), 0) as total
-    FROM chat_messages {donation_where_sql}
-    GROUP BY nickname ORDER BY total DESC LIMIT 10
-"""
-df_top = query_df(conn, query_top, donation_params or None)
+    donation_where = where_clauses.copy()
+    donation_params = params.copy()
+    if selected_type == "전체":
+        donation_where.append("msg_type = %s")
+        donation_params.append("DONATION")
+    donation_where_sql = "WHERE " + " AND ".join(donation_where) if donation_where else ""
 
-if not df_top.empty and df_top["cnt"].sum() > 0:
-    for i, row in df_top.iterrows():
-        rank = i + 1
-        cols = st.columns([0.5, 3, 2, 2])
-        cols[0].markdown(f"**#{rank}**")
-        cols[1].markdown(f"**{row['nickname'] or '-'}**")
-        cols[2].markdown(f"`{int(row['cnt']):,}건`")
-        cols[3].markdown(f"**{int(row['total']):,}원**")
-else:
-    st.info("도네이션 데이터가 없습니다.")
+    query_top = f"""
+        SELECT nickname, count(*) as cnt, COALESCE(sum(pay_amount), 0) as total
+        FROM chat_messages {donation_where_sql}
+        GROUP BY nickname ORDER BY total DESC LIMIT 10
+    """
+    df_top = query_df(_conn, query_top, donation_params or None)
+
+    if not df_top.empty and df_top["cnt"].sum() > 0:
+        for i, row in df_top.iterrows():
+            rank = i + 1
+            cols = st.columns([0.5, 3, 2, 2])
+            cols[0].markdown(f"**#{rank}**")
+            cols[1].markdown(f"**{row['nickname'] or '-'}**")
+            cols[2].markdown(f"`{int(row['cnt']):,}건`")
+            cols[3].markdown(f"**{int(row['total']):,}원**")
+    else:
+        st.info("도네이션 데이터가 없습니다.")
+
+    _conn.close()
+
+
+render_stats()
 
 conn.close()
