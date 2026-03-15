@@ -1,20 +1,25 @@
 import datetime
 import time
 
+from psycopg2.extras import execute_values
+
 from modules.kafka.consumer import get_consumer
 from modules.postgresql import get_connection
 from modules.postgresql.schema import init_schema
 
 
+CHAT_COLUMNS = ("msg_id", "ts", "streamer", "msg_type", "nickname", "message", "pay_amount", "month", "tier_name", "tier_no")
+STREAMING_COLUMNS = ("msg_id", "ts", "streamer", "msg_type", "category")
+
 INSERT_CHAT = """
     INSERT INTO chat_messages (msg_id, ts, streamer, msg_type, nickname, message, pay_amount, month, tier_name, tier_no)
-    VALUES (%(msg_id)s, %(ts)s, %(streamer)s, %(msg_type)s, %(nickname)s, %(message)s, %(pay_amount)s, %(month)s, %(tier_name)s, %(tier_no)s)
+    VALUES %s
     ON CONFLICT (msg_id) DO NOTHING
 """
 
 INSERT_STREAMING = """
     INSERT INTO streaming_events (msg_id, ts, streamer, msg_type, category)
-    VALUES (%(msg_id)s, %(ts)s, %(streamer)s, %(msg_type)s, %(category)s)
+    VALUES %s
     ON CONFLICT (msg_id) DO NOTHING
 """
 
@@ -45,6 +50,7 @@ def run(topic: str):
 
     consumer = get_consumer(topic=topic)
     insert_sql = INSERT_CHAT if topic == "chat" else INSERT_STREAMING
+    columns = CHAT_COLUMNS if topic == "chat" else STREAMING_COLUMNS
 
     print(f"[Consumer] Listening on topic: {topic}")
 
@@ -57,9 +63,9 @@ def run(topic: str):
 
         now = time.monotonic()
         if len(batch) >= BATCH_SIZE or (now - last_flush) >= FLUSH_INTERVAL:
+            values = [tuple(row[col] for col in columns) for row in batch]
             with conn.cursor() as cur:
-                for row in batch:
-                    cur.execute(insert_sql, row)
+                execute_values(cur, insert_sql, values)
                 conn.commit()
             print(f"  [{topic}] flushed {len(batch)} rows")
             batch.clear()
