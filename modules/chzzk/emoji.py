@@ -54,25 +54,28 @@ class EmojiManager:
                     logger.warning(f"이모지 다운로드 실패 [{emoji_id}]: {e}")
                     continue
 
-            self._map[emoji_id] = str(local_path)
+            self._map[emoji_id] = f"{emoji_id}.{ext}"
 
         logger.info(f"이모지 {len(self._map)}개 로드 완료")
 
     def resolve(self, text: str) -> str:
-        """메시지 내 {:emoji_id:} 패턴을 로컬 경로로 치환한다."""
+        """메시지 내 {:emoji_id:} 패턴을 [emoji:id:filename] 형식으로 치환한다."""
         if not self._map:
             return text
         return EMOJI_PATTERN.sub(self._replace, text)
 
     def _replace(self, match: re.Match) -> str:
         emoji_id = match.group(1)
-        path = self._map.get(emoji_id)
-        if path:
-            return f"[emoji:{emoji_id}:{path}]"
+        filename = self._map.get(emoji_id)
+        if filename:
+            return f"[emoji:{emoji_id}:{filename}]"
         return match.group(0)
 
-    def get_path(self, emoji_id: str) -> str | None:
-        return self._map.get(emoji_id)
+    def get_path(self, emoji_id: str) -> Path | None:
+        filename = self._map.get(emoji_id)
+        if filename:
+            return EMOJI_DIR / filename
+        return None
 
     def __len__(self):
         return len(self._map)
