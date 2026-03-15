@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import time
 import uuid
 
 from kafka import KafkaProducer
@@ -15,9 +16,11 @@ def get_logger(streamer_name: str) -> logging.Logger:
     logger = logging.getLogger(name=f"{streamer_name}")
     logger.setLevel(logging.INFO)
 
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
+    # 핸들러 중복 추가 방지
+    if not logger.handlers:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
 
     return logger
 
@@ -33,6 +36,11 @@ def get_uid() -> str:
 def make_msg_id(streamer_name: str, ts: float, uid: str) -> str:
     now = datetime.datetime.fromtimestamp(ts).strftime("%Y%m%d%H%M%S")
     return f"{streamer_name}_{now}_{uid}"
+
+
+# API 호출 주기 (초)
+STREAMING_CHECK_INTERVAL = 30
+CATEGORY_CHECK_INTERVAL = 30
 
 
 class ChzzkChat:
@@ -62,6 +70,10 @@ class ChzzkChat:
         else:
             self.auth_mode = "SEND"
 
+        # 주기적 체크용 타이머
+        self._last_streaming_check = 0.0
+        self._last_category_check = 0.0
+
         self.connect()
 
     def get_streaming_info(self):
@@ -75,6 +87,7 @@ class ChzzkChat:
 
         sock = WebSocket()
         sock.connect("wss://kr-ss3.chat.naver.com/chat")
+        sock.settimeout(5)  # recv() 타임아웃 설정
         self.logger.info(f"{self.channelName} 채팅창에 연결 중 .")
 
         default_dict = {
@@ -157,45 +170,70 @@ class ChzzkChat:
             "payload": payload,
         })
 
+    def _should_check_streaming(self) -> bool:
+        now = time.monotonic()
+        if now - self._last_streaming_check >= STREAMING_CHECK_INTERVAL:
+            self._last_streaming_check = now
+            return True
+        return False
+
+    def _should_check_category(self) -> bool:
+        now = time.monotonic()
+        if now - self._last_category_check >= CATEGORY_CHECK_INTERVAL:
+            self._last_category_check = now
+            return True
+        return False
+
     def run(self):
         while True:
             try:
-                is_streaming = api.fetch_streamingCheck(self.streamer_id, self.cookies)
-                if not is_streaming:
-                    self.logger.info(f"{self.channelName} 방송이 종료되었습니다.")
-                    self._publish("streaming", "STREAMING_END", {})
-                    self._publish("chat", "STREAMING_END", {})
-                    break
+                # 방송 종료 체크 (주기적)
+                if self._should_check_streaming():
+                    try:
+                        is_streaming = api.fetch_streamingCheck(self.streamer_id, self.cookies)
+                        if not is_streaming:
+                            self.logger.info(f"{self.channelName} 방송이 종료되었습니다.")
+                            self._publish("streaming", "STREAMING_END", {})
+                            self._publish("chat", "STREAMING_END", {})
+                            break
+                    except Exception as e:
+                        self.logger.error(f"Streaming check failed: {e}")
 
+                # WebSocket 메시지 수신
                 try:
                     raw_message = self.sock.recv()
+                except TimeoutError:
+                    continue  # 타임아웃이면 루프 재시작 (streaming check 수행)
                 except KeyboardInterrupt:
                     break
                 except Exception:
+                    self.logger.info("WebSocket 연결 끊김, 재연결 중...")
                     self.connect()
-                    raw_message = self.sock.recv()
+                    continue
 
                 raw_message = json.loads(raw_message)
                 chat_cmd = raw_message["cmd"]
 
+                # PING → PONG (즉시 응답, API 호출 없음)
                 if chat_cmd == enums.ChzzkChatCommand.RECEIVE_PING:
                     self.sock.send(
                         json.dumps(
                             {"ver": "3", "cmd": enums.ChzzkChatCommand.REQUEST_PONG}
                         )
                     )
-                    if self.chatChannelId != api.fetch_chatChannelId(
-                        self.streamer_id, self.cookies
-                    )[0]:
-                        self.connect()
                     continue
 
-                _, self.liveCategory = self.get_streaming_info()
-                if self.category != self.liveCategory:
-                    self._publish("streaming", "CATEGORY_CHANGE", {
-                        "category": self.liveCategory,
-                    })
-                    self.category = self.liveCategory
+                # 카테고리 변경 체크 (주기적)
+                if self._should_check_category():
+                    try:
+                        _, live_category = self.get_streaming_info()
+                        if self.category != live_category:
+                            self._publish("streaming", "CATEGORY_CHANGE", {
+                                "category": live_category,
+                            })
+                            self.category = live_category
+                    except Exception as e:
+                        self.logger.error(f"Category check failed: {e}")
 
                 if chat_cmd == enums.ChzzkChatCommand.RECEIVE_CHAT:
                     chat_type = enums.ChzzkChatType.CHAT

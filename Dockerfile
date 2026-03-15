@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
 ENV TZ=Asia/Seoul
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN pip install --no-cache-dir uv
 
 WORKDIR /home/chzzk-data-analytics
 

@@ -15,6 +15,8 @@ dependencies = [
     "websocket-client>=1.8.0",
     "kafka-python>=2.2.13",
     "psycopg2-binary>=2.9.10",
+    "streamlit>=1.45.0",
+    "psutil>=7.0.0",
 ]
 
 [dependency-groups]

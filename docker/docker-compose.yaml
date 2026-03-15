@@ -47,6 +47,22 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: broker:29092
       POSTGRES_HOST: postgres-server
     command: ["uv", "run", "python", "run_pipeline.py", "--pipeline", "crawl_chat.yaml"]
+  dashboard:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: chzzk-dashboard
+    depends_on:
+      - postgres-server
+      - broker
+    env_file:
+      - ../.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      POSTGRES_HOST: postgres-server
+    ports:
+      - 8080:8501
+    command: ["uv", "run", "streamlit", "run", "dashboard/app.py", "--server.address", "0.0.0.0"]
 
 volumes:
   pgdata:
