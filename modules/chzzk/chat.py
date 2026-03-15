@@ -110,7 +110,10 @@ class ChzzkChat:
         }
 
         sock.send(json.dumps(dict(send_dict, **default_dict)))
-        sock_response = json.loads(sock.recv())
+        connect_raw = sock.recv()
+        if not connect_raw:
+            raise ConnectionError("연결 응답이 비어 있음")
+        sock_response = json.loads(connect_raw)
         self.sid = sock_response["bdy"]["sid"]
         self.logger.info(f"\r{self.channelName} 채팅창에 연결 중 ..")
 
@@ -122,7 +125,10 @@ class ChzzkChat:
         }
 
         sock.send(json.dumps(dict(send_dict, **default_dict)))
-        recent_response = json.loads(sock.recv())
+        recent_raw = sock.recv()
+        if not recent_raw:
+            raise ConnectionError("최근 메시지 응답이 비어 있음")
+        recent_response = json.loads(recent_raw)
         self.logger.info(f"\r{self.channelName} 채팅창에 연결 중 ...")
 
         self.sock = sock
