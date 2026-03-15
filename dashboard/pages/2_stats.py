@@ -134,7 +134,7 @@ def render_stats():
         )
         tab1, tab2 = st.tabs(["테이블", "차트"])
         with tab1:
-            st.dataframe(pivot, use_container_width=True)
+            st.dataframe(pivot, width="stretch")
         with tab2:
             st.bar_chart(pivot)
     else:
