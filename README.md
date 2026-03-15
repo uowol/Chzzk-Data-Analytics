@@ -24,6 +24,7 @@ graph LR
 
     DB --> D[Streamlit Dashboard<br/>모니터링 · 통계 · 제어]
     D -->|is_active 토글| DB
+    DB --> MB[Metabase<br/>데이터 분석 · 시각화]
 ```
 
 ### 핵심 모듈
@@ -34,6 +35,7 @@ graph LR
 | `components/producer.py` | WebSocket 채팅 크롤링 → Kafka 발행 |
 | `components/consumer.py` | Kafka 소비 → `execute_values` 배치 INSERT |
 | `components/streaming_check.py` | 방송 상태 API 폴링 (시작 대기) |
+| `components/keyword_analyzer.py` | 키워드 배치 분석 (kiwipiepy 형태소 분석) |
 | `modules/chzzk/` | Chzzk API 클라이언트, WebSocket 핸들러, 이모지 관리 |
 | `modules/kafka/` | Kafka producer/consumer 래퍼 |
 | `modules/postgresql/` | DB 연결 헬퍼 + 스키마 정의 |
@@ -102,19 +104,26 @@ uv run streamlit run dashboard/app.py  # 대시보드 (http://localhost:8501)
 
 ## 대시보드
 
+### Streamlit (`localhost:8080`)
+
 | 탭 | 기능 |
 |---|---|
 | 스트리머 | 등록/삭제, 수집 ON/OFF 토글, 방송 상태 |
 | 통계 | 스트리머별 메시지 유형, 분 단위 수집량 라인 차트, 도네이션 랭킹 |
 | 데이터베이스 | 테이블 조회, 자동 갱신 토글 |
 | Kafka | 브로커/토픽/컨슈머 그룹 상태, Lag 모니터링, 시스템 리소스 |
+| 키워드 분석 | 채팅 키워드 빈도 분석, 채팅 타임라인 차트 |
+
+### Metabase (`localhost:3000`)
+
+Metabase를 통해 수집된 데이터에 대한 자유로운 질의와 시각화를 할 수 있습니다. 초기 설정 시 데이터 소스로 PostgreSQL(`postgres-server:5432`, DB: `chzzk`)을 추가하세요.
 
 ## 기술 스택
 
 - Python 3.12+, uv
 - Kafka (Confluent), PostgreSQL 14
-- Streamlit (대시보드)
-- websocket-client, kafka-python, psycopg2
+- Streamlit (대시보드), Metabase (데이터 분석)
+- websocket-client, kafka-python, psycopg2, kiwipiepy
 - Docker Compose
 
 ## Reference
