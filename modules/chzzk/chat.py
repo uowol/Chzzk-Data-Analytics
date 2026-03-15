@@ -168,10 +168,11 @@ class ChzzkChat:
 
         self.sock.send(json.dumps(dict(send_dict, **default_dict)))
 
-    def _publish(self, topic: str, msg_type: str, msg_id: str, payload: dict):
+    def _publish(self, topic: str, msg_type: str, msg_id: str, payload: dict,
+                 ts: float | None = None):
         self.producer.send(topic, {
             "msg_id": msg_id,
-            "ts": time.time(),
+            "ts": ts or time.time(),
             "streamer_name": self.streamer_name,
             "msg_type": msg_type,
             "payload": payload,
@@ -233,12 +234,18 @@ class ChzzkChat:
         # 결정적 msg_id: cid + uid + msg + msgTime + 배치인덱스 → 중복 방지
         msg_id = make_msg_id(self.chatChannelId, uid, raw_msg, msg_time, idx)
 
+        # msgTime: 치지직 서버 타임스탬프 (밀리초) → 초 단위로 변환
+        try:
+            ts = int(msg_time) / 1000.0
+        except (ValueError, TypeError):
+            ts = time.time()
+
         if chat_type == enums.ChzzkChatType.DONATION:
             self._publish("chat", "DONATION", msg_id, {
                 "nickname": nickname,
                 "message": msg,
                 "payAmount": extras.get("payAmount", 0) if extras else 0,
-            })
+            }, ts=ts)
         elif chat_type == enums.ChzzkChatType.SUBSCRIPTION:
             self._publish("chat", "SUBSCRIPTION", msg_id, {
                 "nickname": nickname,
@@ -246,14 +253,14 @@ class ChzzkChat:
                 "month": extras["month"] if extras else 0,
                 "tierName": extras["tierName"] if extras else "",
                 "tierNo": extras["tierNo"] if extras else 0,
-            })
+            }, ts=ts)
         elif chat_type == enums.ChzzkChatType.CHAT:
             self._publish("chat", "CHAT", msg_id, {
                 "nickname": nickname,
                 "message": msg,
-            })
+            }, ts=ts)
         elif chat_type == enums.ChzzkChatType.DELETED_CHAT:
-            self._publish("chat", "DELETED_CHAT", msg_id, {})
+            self._publish("chat", "DELETED_CHAT", msg_id, {}, ts=ts)
 
     def _should_check_streaming(self) -> bool:
         now = time.monotonic()
