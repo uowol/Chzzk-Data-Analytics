@@ -12,7 +12,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from modules.postgresql import get_connection
-from dashboard.style import apply_style, metric_card, section_title
+from dashboard.style import apply_style, metric_card, render_sidebar, section_title
 
 EMOJI_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "emojis"
 EMOJI_TAG_RE = re.compile(r"\[emoji:([a-zA-Z0-9_]+):([^\]]+)\]")
@@ -137,6 +137,7 @@ def _build_timeline_html(df_timeline, top_msgs_by_min: dict, max_count: int) -> 
 
 st.set_page_config(page_title="키워드 분석", page_icon="🔤", layout="wide")
 apply_style()
+render_sidebar()
 
 st.markdown("""
 <h1 style="font-weight: 800; margin-bottom: 0.2rem;">🔤 키워드 분석</h1>

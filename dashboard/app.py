@@ -7,7 +7,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dashboard.style import apply_style, metric_card, section_title
+from dashboard.style import apply_style, metric_card, render_sidebar, section_title
 from modules.postgresql import get_connection
 
 st.set_page_config(
@@ -16,6 +16,7 @@ st.set_page_config(
     layout="wide",
 )
 apply_style()
+render_sidebar()
 
 # --- 헤더 ---
 st.markdown("""

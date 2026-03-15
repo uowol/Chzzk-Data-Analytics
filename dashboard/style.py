@@ -1,5 +1,7 @@
 """대시보드 공통 스타일"""
 
+import os
+
 import streamlit as st
 
 CUSTOM_CSS = """
@@ -117,6 +119,22 @@ div[data-testid="stToggle"] label > div {
     transform: scale(1.4);
     transform-origin: left center;
 }
+
+/* 기본 사이드바 네비게이션 숨김 */
+[data-testid="stSidebarNav"] {
+    display: none;
+}
+
+/* 사이드바 섹션 제목 */
+.sidebar-section {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.8rem 0 0.4rem 0;
+    margin: 0;
+}
 </style>
 """
 
@@ -142,3 +160,32 @@ def badge(text: str, variant: str = "default"):
 
 def section_title(text: str):
     st.markdown(f'<div class="section-title">{text}</div>', unsafe_allow_html=True)
+
+
+def render_sidebar():
+    """커스텀 사이드바 렌더링"""
+    metabase_url = os.environ.get("METABASE_URL", "http://localhost:3000")
+
+    with st.sidebar:
+        st.markdown(
+            '<p style="font-size:1.2rem; font-weight:700; margin-bottom:0.2rem;">'
+            "Chzzk Analytics</p>"
+            '<p style="font-size:0.8rem; color:#9ca3af; margin-top:0;">데이터 파이프라인</p>',
+            unsafe_allow_html=True,
+        )
+
+        st.divider()
+
+        st.page_link("app.py", label="홈", icon="🏠")
+
+        st.markdown('<p class="sidebar-section">데이터 수집</p>', unsafe_allow_html=True)
+        st.page_link("pages/1_streamers.py", label="스트리머 관리", icon="📡")
+        st.page_link("pages/2_stats.py", label="수집 통계", icon="📈")
+        st.page_link("pages/3_database.py", label="데이터베이스", icon="🗄️")
+
+        st.markdown('<p class="sidebar-section">데이터 분석</p>', unsafe_allow_html=True)
+        st.page_link("pages/5_keywords.py", label="키워드 분석", icon="🔤")
+        st.page_link(metabase_url, label="Metabase", icon="📊")
+
+        st.markdown('<p class="sidebar-section">시스템</p>', unsafe_allow_html=True)
+        st.page_link("pages/4_kafka.py", label="Kafka", icon="⚡")

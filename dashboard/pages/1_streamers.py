@@ -11,10 +11,11 @@ from modules.chzzk.api import fetch_channelName, fetch_streamingCheck
 from modules.config import NID_AUT, NID_SES
 from modules.postgresql import get_connection
 
-from dashboard.style import apply_style, badge, section_title
+from dashboard.style import apply_style, badge, render_sidebar, section_title
 
 st.set_page_config(page_title="스트리머 관리", page_icon="📡", layout="wide")
 apply_style()
+render_sidebar()
 
 st.markdown("""
 <h1 style="font-weight: 800; margin-bottom: 0.2rem;">📡 스트리머 관리</h1>

@@ -14,10 +14,11 @@ from kafka.admin import KafkaAdminClient
 
 from modules.config import KAFKA_BOOTSTRAP_SERVERS
 from modules.postgresql import get_connection
-from dashboard.style import apply_style, badge, metric_card, section_title
+from dashboard.style import apply_style, badge, metric_card, render_sidebar, section_title
 
 st.set_page_config(page_title="Kafka 모니터링", page_icon="⚡", layout="wide")
 apply_style()
+render_sidebar()
 
 st.markdown("""
 <h1 style="font-weight: 800; margin-bottom: 0.2rem;">⚡ Kafka 모니터링</h1>

@@ -9,7 +9,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from modules.postgresql import get_connection
-from dashboard.style import apply_style, section_title
+from dashboard.style import apply_style, render_sidebar, section_title
 
 
 def query_df(conn, sql, params=None):
@@ -23,6 +23,7 @@ def query_df(conn, sql, params=None):
 
 st.set_page_config(page_title="데이터베이스", page_icon="🗄️", layout="wide")
 apply_style()
+render_sidebar()
 
 st.markdown("""
 <h1 style="font-weight: 800; margin-bottom: 0.2rem;">🗄️ 데이터베이스</h1>
