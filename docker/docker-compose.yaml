@@ -33,14 +33,20 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-  # chzzk-analytics:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: chzzk-analytics
-  #   depends_on:
-  #     - postgres-server
-  #   command: []
+  chzzk-analytics:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: chzzk-analytics
+    depends_on:
+      - postgres-server
+      - broker
+    env_file:
+      - ../.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: broker:29092
+      POSTGRES_HOST: postgres-server
+    command: ["uv", "run", "python", "run_pipeline.py", "--pipeline", "crawl_chat.yaml"]
 
 volumes:
   pgdata:

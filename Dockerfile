@@ -14,6 +14,8 @@ ENV TZ=Asia/Seoul
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /home/chzzk-data-analytics
-COPY . .
 
-RUN uv sync
+COPY pyproject.toml uv.lock ./
+RUN uv sync --no-group dev
+
+COPY . .
