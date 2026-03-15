@@ -92,10 +92,13 @@ docker compose -f docker/docker-compose.yaml exec broker \
 ### 4. 로컬 개발
 
 ```bash
-uv sync                  # 의존성 설치
-uv run ruff check .      # 린트
-uv run python orchestrator.py  # 로컬에서 직접 실행
+uv sync                            # 의존성 설치
+uv run ruff check .                # 린트
+uv run python orchestrator.py      # 데이터 수집 (크롤러 + Consumer)
+uv run streamlit run dashboard/app.py  # 대시보드 (http://localhost:8501)
 ```
+
+> `orchestrator.py`는 데이터 수집만 담당합니다. 대시보드는 별도로 실행해야 합니다.
 
 ## 대시보드
 
