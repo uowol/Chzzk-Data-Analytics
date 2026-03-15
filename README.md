@@ -8,18 +8,22 @@ Chzzk(치지직) 스트리밍 플랫폼의 채팅·후원 데이터를 실시간
 
 ## 아키텍처
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Orchestrator (DB 폴링 → 크롤러 스레드 자동 시작/중지)     │
-│                                                         │
-│  StreamingCheck → Producer → Kafka → Consumer → PostgreSQL│
-│  (방송 대기)    (WebSocket)   ↕        ↕       (적재)     │
-│                          chat 토픽  배치 INSERT           │
-│                       streaming 토픽                      │
-└─────────────────────────────────────────────────────────┘
-                            │
-                    Streamlit Dashboard
-                (실시간 모니터링 · 통계 · 제어)
+```mermaid
+graph LR
+    subgraph Orchestrator["Orchestrator (DB 폴링)"]
+        SC[StreamingCheck<br/>방송 대기] --> P[Producer<br/>WebSocket 크롤링]
+    end
+
+    P --> K1[/chat 토픽/]
+    P --> K2[/streaming 토픽/]
+
+    K1 --> C[Consumer<br/>배치 INSERT]
+    K2 --> C
+
+    C --> DB[(PostgreSQL)]
+
+    DB --> D[Streamlit Dashboard<br/>모니터링 · 통계 · 제어]
+    D -->|is_active 토글| DB
 ```
 
 ### 핵심 모듈
