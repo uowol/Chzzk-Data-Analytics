@@ -1,9 +1,8 @@
-import datetime
+import hashlib
 import json
 import logging
 import threading
 import time
-import uuid
 
 from kafka import KafkaProducer
 from websocket import WebSocket
@@ -27,17 +26,14 @@ def get_logger(streamer_name: str) -> logging.Logger:
     return logger
 
 
-def get_ts() -> float:
-    return datetime.datetime.now().timestamp()
+def make_msg_id(cid: str, uid: str, msg: str, msg_time: str, idx: int = 0) -> str:
+    """원본 메시지 기반 결정적 ID. 같은 메시지는 항상 같은 ID를 생성한다.
 
-
-def get_uid() -> str:
-    return uuid.uuid4().hex[:8]
-
-
-def make_msg_id(streamer_name: str, ts: float, uid: str) -> str:
-    now = datetime.datetime.fromtimestamp(ts).strftime("%Y%m%d%H%M%S")
-    return f"{streamer_name}_{now}_{uid}"
+    cid(채팅 채널 ID) + uid + msg + msgTime + 배치 내 인덱스를 조합하여
+    'ㅋ' 같은 짧은 메시지가 동시에 들어와도 충돌하지 않도록 한다.
+    """
+    raw = f"{cid}:{uid}:{msg}:{msg_time}:{idx}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
 # API 호출 주기 (초)
@@ -122,11 +118,11 @@ class ChzzkChat:
             "cmd": enums.ChzzkChatCommand.REQUEST_RECENT_CHAT,
             "tid": 2,
             "sid": self.sid,
-            "bdy": {"recentMessageCount": 50},
+            "bdy": {"recentMessageCount": 100},
         }
 
         sock.send(json.dumps(dict(send_dict, **default_dict)))
-        sock.recv()
+        recent_response = json.loads(sock.recv())
         self.logger.info(f"\r{self.channelName} 채팅창에 연결 중 ...")
 
         self.sock = sock
@@ -134,6 +130,13 @@ class ChzzkChat:
             self.logger.info("연결 성공")
         else:
             raise ValueError("오류 발생")
+
+        # 재연결 시 최근 메시지를 처리하여 갭 최소화
+        self._process_raw_message(recent_response)
+
+        # 재연결 후 타이머 리셋 (즉시 API 호출 방지)
+        self._last_streaming_check = time.monotonic()
+        self._last_category_check = time.monotonic()
 
     def send(self, message: str):
         default_dict = {
@@ -159,22 +162,98 @@ class ChzzkChat:
                 "msg": message,
                 "msgTypeCode": 1,
                 "extras": json.dumps(extras),
-                "msgTime": int(datetime.datetime.now().timestamp()),
+                "msgTime": int(time.time()),
             },
         }
 
         self.sock.send(json.dumps(dict(send_dict, **default_dict)))
 
-    def _publish(self, topic: str, msg_type: str, payload: dict):
-        ts = get_ts()
-        uid = get_uid()
+    def _publish(self, topic: str, msg_type: str, msg_id: str, payload: dict):
         self.producer.send(topic, {
-            "msg_id": make_msg_id(self.streamer_name, ts, uid),
-            "ts": ts,
+            "msg_id": msg_id,
+            "ts": time.time(),
             "streamer_name": self.streamer_name,
             "msg_type": msg_type,
             "payload": payload,
         })
+
+    def _process_raw_message(self, raw_message: dict):
+        """수신된 WebSocket 메시지를 파싱하여 Kafka에 발행한다."""
+        chat_cmd = raw_message.get("cmd")
+
+        if chat_cmd == enums.ChzzkChatCommand.RECEIVE_CHAT:
+            chat_type = enums.ChzzkChatType.CHAT
+        elif chat_cmd == enums.ChzzkChatCommand.RECEIVE_SPECIAL:
+            try:
+                messageTypeCode = raw_message["bdy"][0]["msgTypeCode"]
+                extras = json.loads(raw_message["bdy"][0]["extras"])
+                chat_type = enums.ChzzkChatType.DONATION if messageTypeCode == 10 else enums.ChzzkChatType.SUBSCRIPTION
+            except (KeyError, IndexError, json.JSONDecodeError):
+                return
+        else:
+            # PING, 최근 채팅 응답 등 bdy가 리스트인 경우 처리
+            if "bdy" in raw_message and isinstance(raw_message["bdy"], dict):
+                # 최근 채팅 응답: bdy.messageList
+                message_list = raw_message["bdy"].get("messageList", [])
+                if message_list:
+                    for idx, chat_data in enumerate(message_list):
+                        self._process_chat_data(chat_data, enums.ChzzkChatType.CHAT, idx=idx)
+            return
+
+        for idx, chat_data in enumerate(raw_message.get("bdy", [])):
+            if chat_type == enums.ChzzkChatType.CHAT and chat_data.get("msgStatusType") == "CBOTBLIND":
+                current_type = enums.ChzzkChatType.DELETED_CHAT
+            else:
+                current_type = chat_type
+
+            if current_type == enums.ChzzkChatType.DONATION:
+                self._process_chat_data(chat_data, current_type, extras=extras, idx=idx)
+            elif current_type == enums.ChzzkChatType.SUBSCRIPTION:
+                self._process_chat_data(chat_data, current_type, extras=extras, idx=idx)
+            else:
+                self._process_chat_data(chat_data, current_type, idx=idx)
+
+    def _process_chat_data(self, chat_data: dict, chat_type,
+                           extras: dict | None = None, idx: int = 0):
+        """개별 채팅 데이터를 처리하여 Kafka에 발행한다."""
+        try:
+            uid = chat_data.get("uid", "")
+            if uid == "anonymous":
+                nickname = "익명의 후원자"
+            else:
+                profile_data = json.loads(chat_data["profile"])
+                nickname = profile_data["nickname"]
+        except (KeyError, json.JSONDecodeError):
+            return
+
+        raw_msg = chat_data.get("msg") or ""
+        msg = self.emoji.resolve(raw_msg) if raw_msg else ""
+        msg_time = str(chat_data.get("msgTime", ""))
+
+        # 결정적 msg_id: cid + uid + msg + msgTime + 배치인덱스 → 중복 방지
+        msg_id = make_msg_id(self.chatChannelId, uid, raw_msg, msg_time, idx)
+
+        if chat_type == enums.ChzzkChatType.DONATION:
+            self._publish("chat", "DONATION", msg_id, {
+                "nickname": nickname,
+                "message": msg,
+                "payAmount": extras.get("payAmount", 0) if extras else 0,
+            })
+        elif chat_type == enums.ChzzkChatType.SUBSCRIPTION:
+            self._publish("chat", "SUBSCRIPTION", msg_id, {
+                "nickname": nickname,
+                "message": msg,
+                "month": extras["month"] if extras else 0,
+                "tierName": extras["tierName"] if extras else "",
+                "tierNo": extras["tierNo"] if extras else 0,
+            })
+        elif chat_type == enums.ChzzkChatType.CHAT:
+            self._publish("chat", "CHAT", msg_id, {
+                "nickname": nickname,
+                "message": msg,
+            })
+        elif chat_type == enums.ChzzkChatType.DELETED_CHAT:
+            self._publish("chat", "DELETED_CHAT", msg_id, {})
 
     def _should_check_streaming(self) -> bool:
         now = time.monotonic()
@@ -199,8 +278,9 @@ class ChzzkChat:
                         is_streaming = api.fetch_streamingCheck(self.streamer_id, self.cookies)
                         if not is_streaming:
                             self.logger.info(f"{self.channelName} 방송이 종료되었습니다.")
-                            self._publish("streaming", "STREAMING_END", {})
-                            self._publish("chat", "STREAMING_END", {})
+                            msg_id = make_msg_id(self.chatChannelId, "system", "STREAMING_END", str(time.time()))
+                            self._publish("streaming", "STREAMING_END", msg_id, {})
+                            self._publish("chat", "STREAMING_END", msg_id, {})
                             break
                     except Exception as e:
                         self.logger.error(f"Streaming check failed: {e}")
@@ -234,60 +314,16 @@ class ChzzkChat:
                     try:
                         _, live_category = self.get_streaming_info()
                         if self.category != live_category:
-                            self._publish("streaming", "CATEGORY_CHANGE", {
+                            msg_id = make_msg_id(self.chatChannelId, "system", "CATEGORY_CHANGE", str(time.time()))
+                            self._publish("streaming", "CATEGORY_CHANGE", msg_id, {
                                 "category": live_category,
                             })
                             self.category = live_category
                     except Exception as e:
                         self.logger.error(f"Category check failed: {e}")
 
-                if chat_cmd == enums.ChzzkChatCommand.RECEIVE_CHAT:
-                    chat_type = enums.ChzzkChatType.CHAT
-                elif chat_cmd == enums.ChzzkChatCommand.RECEIVE_SPECIAL:
-                    messageTypeCode = raw_message["bdy"][0]["msgTypeCode"]
-                    extras = json.loads(raw_message["bdy"][0]["extras"])
-                    chat_type = enums.ChzzkChatType.DONATION if messageTypeCode == 10 else enums.ChzzkChatType.SUBSCRIPTION
-                else:
-                    continue
+                self._process_raw_message(raw_message)
 
-                for chat_data in raw_message["bdy"]:
-                    if chat_type == enums.ChzzkChatType.CHAT and chat_data.get("msgStatusType") == "CBOTBLIND":
-                        current_type = enums.ChzzkChatType.DELETED_CHAT
-                    else:
-                        current_type = chat_type
-
-                    try:
-                        if chat_data["uid"] == "anonymous":
-                            nickname = "익명의 후원자"
-                        else:
-                            profile_data = json.loads(chat_data["profile"])
-                            nickname = profile_data["nickname"]
-                    except (KeyError, json.JSONDecodeError):
-                        continue
-
-                    msg = self.emoji.resolve(chat_data["msg"]) if chat_data["msg"] else ""
-
-                    if current_type == enums.ChzzkChatType.DONATION:
-                        self._publish("chat", "DONATION", {
-                            "nickname": nickname,
-                            "message": msg,
-                            "payAmount": extras.get("payAmount", 0),
-                        })
-                    elif current_type == enums.ChzzkChatType.SUBSCRIPTION:
-                        self._publish("chat", "SUBSCRIPTION", {
-                            "nickname": nickname,
-                            "message": msg,
-                            "month": extras["month"],
-                            "tierName": extras["tierName"],
-                            "tierNo": extras["tierNo"],
-                        })
-                    elif current_type == enums.ChzzkChatType.CHAT:
-                        self._publish("chat", "CHAT", {
-                            "nickname": nickname,
-                            "message": msg,
-                        })
-                    elif current_type == enums.ChzzkChatType.DELETED_CHAT:
-                        self._publish("chat", "DELETED_CHAT", {})
             except KeyboardInterrupt:
                 break
             except Exception as e:
